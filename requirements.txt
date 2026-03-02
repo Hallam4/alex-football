@@ -1,2 +1,0 @@
-# Root-level pointer for Railway/Nixpacks detection
--r backend/requirements.txt
