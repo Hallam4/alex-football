@@ -1,167 +1,19 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, CreateDraftResponse, DraftPlayer } from "../api/football";
+import { DraftPlayer } from "../api/football";
 import { useDraftWebSocket } from "../hooks/useDraftWebSocket";
 
-const SNAKE_ORDER = ["A", "B", "B", "A", "B", "A", "B", "A", "B", "A"];
+export const SNAKE_ORDER = ["A", "B", "B", "A", "B", "A", "B", "A", "B", "A"];
 
-interface Props {
-  initialCode?: string | null;
-  initialToken?: string | null;
-}
+// --- Share Links ---
 
-export default function SnakeDraft({ initialCode, initialToken }: Props) {
-  const [draftInfo, setDraftInfo] = useState<CreateDraftResponse | null>(null);
-  const [liveCode, setLiveCode] = useState<string | null>(initialCode ?? null);
-  const [liveToken, setLiveToken] = useState<string | null>(initialToken ?? null);
-
-  // Phase 1: Setup created a draft → Phase 2: Show links
-  // Phase 3: Captain opened a link (has code + token)
-
-  if (liveCode && liveToken) {
-    return <DraftBoard code={liveCode} token={liveToken} />;
-  }
-
-  if (draftInfo) {
-    return <DraftShareLinks draft={draftInfo} onJoin={(code, token) => { setLiveCode(code); setLiveToken(token); }} />;
-  }
-
-  return <DraftSetup onCreated={setDraftInfo} />;
-}
-
-// --- Phase 1: Setup ---
-
-function DraftSetup({ onCreated }: { onCreated: (d: CreateDraftResponse) => void }) {
-  const { data: players, isLoading } = useQuery({
-    queryKey: ["players"],
-    queryFn: api.getPlayers,
-  });
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [captainAId, setCaptainAId] = useState<number | null>(null);
-  const [captainBId, setCaptainBId] = useState<number | null>(null);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.createDraft({
-        captain_a_id: captainAId!,
-        captain_b_id: captainBId!,
-        player_ids: Array.from(selected),
-      }),
-    onSuccess: onCreated,
-  });
-
-  if (isLoading) return <p className="text-gray-400">Loading players...</p>;
-  if (!players) return null;
-
-  const activePlayers = players.filter((p) => p.is_active);
-  const selectedPlayers = players.filter((p) => selected.has(p.id));
-
-  const toggle = (id: number) => {
-    const next = new Set(selected);
-    if (next.has(id)) {
-      next.delete(id);
-      // Clear captain selection if removed player was a captain
-      if (captainAId === id) setCaptainAId(null);
-      if (captainBId === id) setCaptainBId(null);
-    } else if (next.size < 12) {
-      next.add(id);
-    }
-    setSelected(next);
-  };
-
-  const canCreate = selected.size === 12 && captainAId !== null && captainBId !== null;
-
-  return (
-    <div>
-      <h2 className="text-lg font-bold text-green-400 mb-1">Snake Draft</h2>
-      <p className="text-sm text-gray-400 mb-4">
-        Select 12 players, choose two captains, then share draft links.
-      </p>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
-        {activePlayers.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => toggle(p.id)}
-            className={`rounded-lg p-3 text-left text-sm transition-colors ${
-              selected.has(p.id)
-                ? "bg-green-800 border border-green-500"
-                : "bg-gray-800 border border-gray-700 hover:border-gray-500"
-            }`}
-          >
-            <div className="font-medium">{p.name}</div>
-            <div className="text-xs text-gray-400">{p.win_rate}% win rate</div>
-          </button>
-        ))}
-      </div>
-
-      <p className="text-sm text-gray-400 mb-3">{selected.size}/12 players selected</p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 max-w-md">
-        <div>
-          <label className="text-xs text-gray-400 block mb-1">Captain A (picks first)</label>
-          <select
-            value={captainAId ?? ""}
-            onChange={(e) => setCaptainAId(e.target.value ? Number(e.target.value) : null)}
-            disabled={selected.size < 12}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:border-green-500 focus:outline-none disabled:opacity-50"
-          >
-            <option value="">{selected.size < 12 ? "Select 12 players first" : "Choose captain..."}</option>
-            {selectedPlayers
-              .filter((p) => p.id !== captainBId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-gray-400 block mb-1">Captain B</label>
-          <select
-            value={captainBId ?? ""}
-            onChange={(e) => setCaptainBId(e.target.value ? Number(e.target.value) : null)}
-            disabled={selected.size < 12}
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:border-green-500 focus:outline-none disabled:opacity-50"
-          >
-            <option value="">{selected.size < 12 ? "Select 12 players first" : "Choose captain..."}</option>
-            {selectedPlayers
-              .filter((p) => p.id !== captainAId)
-              .map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => mutation.mutate()}
-          disabled={!canCreate || mutation.isPending}
-          className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors"
-        >
-          {mutation.isPending ? "Creating..." : "Create Draft"}
-        </button>
-        {selected.size > 0 && (
-          <button onClick={() => { setSelected(new Set()); setCaptainAId(null); setCaptainBId(null); }} className="text-sm text-gray-400 hover:text-white">
-            Clear
-          </button>
-        )}
-      </div>
-
-      {mutation.error && (
-        <p className="text-red-400 mt-3 text-sm">Error: {(mutation.error as Error).message}</p>
-      )}
-    </div>
-  );
-}
-
-// --- Phase 2: Share Links ---
-
-function DraftShareLinks({
+export function DraftShareLinks({
   draft,
   onJoin,
+  onBack,
 }: {
-  draft: CreateDraftResponse;
+  draft: { code: string; token_a: string; token_b: string };
   onJoin: (code: string, token: string) => void;
+  onBack?: () => void;
 }) {
   const [copiedA, setCopiedA] = useState(false);
   const [copiedB, setCopiedB] = useState(false);
@@ -213,12 +65,20 @@ function DraftShareLinks({
         >
           Join as Captain B
         </button>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-sm text-gray-400 hover:text-white transition-colors ml-auto"
+          >
+            Back
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-function LinkCard({
+export function LinkCard({
   label,
   url,
   copied,
@@ -248,9 +108,17 @@ function LinkCard({
   );
 }
 
-// --- Phase 3: Draft Board ---
+// --- Draft Board ---
 
-function DraftBoard({ code, token }: { code: string; token: string }) {
+export function DraftBoard({
+  code,
+  token,
+  onBack,
+}: {
+  code: string;
+  token: string;
+  onBack?: () => void;
+}) {
   const { state, status, error, pick } = useDraftWebSocket(code, token);
 
   if (status === "connecting" || (!state && status !== "error")) {
@@ -271,8 +139,18 @@ function DraftBoard({ code, token }: { code: string; token: string }) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-green-400">Snake Draft</h2>
-        <div className="text-xs text-gray-500">
-          {status === "connected" ? "Live" : "Reconnecting..."}
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-gray-500">
+            {status === "connected" ? "Live" : "Reconnecting..."}
+          </div>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Back
+            </button>
+          )}
         </div>
       </div>
 
@@ -369,7 +247,7 @@ function DraftBoard({ code, token }: { code: string; token: string }) {
   );
 }
 
-function AvailablePlayerCard({
+export function AvailablePlayerCard({
   player,
   canPick,
   onPick,
@@ -412,7 +290,7 @@ function AvailablePlayerCard({
   );
 }
 
-function DraftTeamPanel({
+export function DraftTeamPanel({
   title,
   players,
   strength,
