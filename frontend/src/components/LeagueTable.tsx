@@ -21,7 +21,7 @@ export default function LeagueTable({
     queryKey: ["blocks"],
     queryFn: api.getBlocks,
   });
-  const [sortKey, setSortKey] = useState<SortKey>("ppg");
+  const [sortKey, setSortKey] = useState<SortKey>("points");
   const [sortAsc, setSortAsc] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState(false);
   const [blockName, setBlockName] = useState("");
