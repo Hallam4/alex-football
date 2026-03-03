@@ -105,8 +105,8 @@ export interface BlockSummary {
 
 // --- Snake Draft ---
 export interface CreateDraftRequest {
-  captain_a: string;
-  captain_b: string;
+  captain_a_id: number;
+  captain_b_id: number;
   player_ids: number[];
 }
 

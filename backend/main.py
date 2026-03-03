@@ -157,6 +157,12 @@ async def add_game(req: GameEntryRequest, db: AsyncSession = Depends(get_db)):
 async def create_draft_session(req: CreateDraftRequest, db: AsyncSession = Depends(get_db)):
     if len(req.player_ids) != 12:
         raise HTTPException(status_code=400, detail="Exactly 12 player IDs required")
+    if req.captain_a_id not in req.player_ids:
+        raise HTTPException(status_code=400, detail="Captain A must be one of the 12 selected players")
+    if req.captain_b_id not in req.player_ids:
+        raise HTTPException(status_code=400, detail="Captain B must be one of the 12 selected players")
+    if req.captain_a_id == req.captain_b_id:
+        raise HTTPException(status_code=400, detail="Captains must be different players")
 
     ratings = await get_player_ratings(db, req.player_ids)
     synergy_raw = await get_pair_synergy(db, req.player_ids)
@@ -169,10 +175,14 @@ async def create_draft_session(req: CreateDraftRequest, db: AsyncSession = Depen
         for pid in req.player_ids
     ]
 
+    # Resolve captain names from IDs
+    captain_a_name = name_map.get(req.captain_a_id, "Unknown")
+    captain_b_name = name_map.get(req.captain_b_id, "Unknown")
+
     # Convert synergy keys to strings for JSON-safe storage
     synergy = {f"{a},{b}": v for (a, b), v in synergy_raw.items()}
 
-    session = create_draft(req.captain_a, req.captain_b, pool, synergy)
+    session = create_draft(captain_a_name, captain_b_name, req.captain_a_id, req.captain_b_id, pool, synergy)
     return CreateDraftResponse(code=session.code, token_a=session.token_a, token_b=session.token_b)
 
 
@@ -220,9 +230,10 @@ async def draft_websocket(ws: WebSocket, code: str, token: str = Query(...)):
                 if player_id in session.picked_ids():
                     await ws.send_json({"type": "error", "message": "Player already picked"})
                     continue
-                # Validate player is in pool
+                # Validate player is in pool and not a captain
                 pool_ids = {p["id"] for p in session.pool}
-                if player_id not in pool_ids:
+                captain_ids = {session.captain_a_id, session.captain_b_id}
+                if player_id not in pool_ids or player_id in captain_ids:
                     await ws.send_json({"type": "error", "message": "Invalid player"})
                     continue
 

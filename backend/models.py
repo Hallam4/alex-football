@@ -135,8 +135,8 @@ class GameEntryRequest(BaseModel):
 
 # --- Snake Draft ---
 class CreateDraftRequest(BaseModel):
-    captain_a: str
-    captain_b: str
+    captain_a_id: int
+    captain_b_id: int
     player_ids: list[int]
 
 

@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, CreateDraftResponse, DraftPlayer } from "../api/football";
 import { useDraftWebSocket } from "../hooks/useDraftWebSocket";
 
-const SNAKE_ORDER = ["A", "B", "B", "A", "A", "B", "B", "A", "A", "B", "B", "A"];
+const SNAKE_ORDER = ["A", "B", "B", "A", "A", "B", "B", "A", "A", "B"];
 
 interface Props {
   initialCode?: string | null;
@@ -37,14 +37,14 @@ function DraftSetup({ onCreated }: { onCreated: (d: CreateDraftResponse) => void
     queryFn: api.getPlayers,
   });
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [captainA, setCaptainA] = useState("");
-  const [captainB, setCaptainB] = useState("");
+  const [captainAId, setCaptainAId] = useState<number | null>(null);
+  const [captainBId, setCaptainBId] = useState<number | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
       api.createDraft({
-        captain_a: captainA.trim(),
-        captain_b: captainB.trim(),
+        captain_a_id: captainAId!,
+        captain_b_id: captainBId!,
         player_ids: Array.from(selected),
       }),
     onSuccess: onCreated,
@@ -54,21 +54,28 @@ function DraftSetup({ onCreated }: { onCreated: (d: CreateDraftResponse) => void
   if (!players) return null;
 
   const activePlayers = players.filter((p) => p.is_active);
+  const selectedPlayers = players.filter((p) => selected.has(p.id));
 
   const toggle = (id: number) => {
     const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else if (next.size < 12) next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+      // Clear captain selection if removed player was a captain
+      if (captainAId === id) setCaptainAId(null);
+      if (captainBId === id) setCaptainBId(null);
+    } else if (next.size < 12) {
+      next.add(id);
+    }
     setSelected(next);
   };
 
-  const canCreate = selected.size === 12 && captainA.trim() && captainB.trim();
+  const canCreate = selected.size === 12 && captainAId !== null && captainBId !== null;
 
   return (
     <div>
       <h2 className="text-lg font-bold text-green-400 mb-1">Snake Draft</h2>
       <p className="text-sm text-gray-400 mb-4">
-        Select 12 players, name two captains, then share draft links.
+        Select 12 players, choose two captains, then share draft links.
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
@@ -93,23 +100,35 @@ function DraftSetup({ onCreated }: { onCreated: (d: CreateDraftResponse) => void
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 max-w-md">
         <div>
           <label className="text-xs text-gray-400 block mb-1">Captain A (picks first)</label>
-          <input
-            type="text"
-            value={captainA}
-            onChange={(e) => setCaptainA(e.target.value)}
-            placeholder="Name..."
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-green-500 focus:outline-none"
-          />
+          <select
+            value={captainAId ?? ""}
+            onChange={(e) => setCaptainAId(e.target.value ? Number(e.target.value) : null)}
+            disabled={selected.size < 12}
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:border-green-500 focus:outline-none disabled:opacity-50"
+          >
+            <option value="">{selected.size < 12 ? "Select 12 players first" : "Choose captain..."}</option>
+            {selectedPlayers
+              .filter((p) => p.id !== captainBId)
+              .map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+          </select>
         </div>
         <div>
           <label className="text-xs text-gray-400 block mb-1">Captain B</label>
-          <input
-            type="text"
-            value={captainB}
-            onChange={(e) => setCaptainB(e.target.value)}
-            placeholder="Name..."
-            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-green-500 focus:outline-none"
-          />
+          <select
+            value={captainBId ?? ""}
+            onChange={(e) => setCaptainBId(e.target.value ? Number(e.target.value) : null)}
+            disabled={selected.size < 12}
+            className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:border-green-500 focus:outline-none disabled:opacity-50"
+          >
+            <option value="">{selected.size < 12 ? "Select 12 players first" : "Choose captain..."}</option>
+            {selectedPlayers
+              .filter((p) => p.id !== captainAId)
+              .map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+          </select>
         </div>
       </div>
 
@@ -122,7 +141,7 @@ function DraftSetup({ onCreated }: { onCreated: (d: CreateDraftResponse) => void
           {mutation.isPending ? "Creating..." : "Create Draft"}
         </button>
         {selected.size > 0 && (
-          <button onClick={() => setSelected(new Set())} className="text-sm text-gray-400 hover:text-white">
+          <button onClick={() => { setSelected(new Set()); setCaptainAId(null); setCaptainBId(null); }} className="text-sm text-gray-400 hover:text-white">
             Clear
           </button>
         )}
@@ -267,8 +286,8 @@ function DraftBoard({ code, token }: { code: string; token: string }) {
           }`}
         >
           {isMyTurn
-            ? `Your pick! (Pick ${state.pick_number + 1} of 12)`
-            : `Waiting for ${turnCaptainName}... (Pick ${state.pick_number + 1} of 12)`}
+            ? `Your pick! (Pick ${state.pick_number + 1} of 10)`
+            : `Waiting for ${turnCaptainName}... (Pick ${state.pick_number + 1} of 10)`}
         </div>
       )}
 

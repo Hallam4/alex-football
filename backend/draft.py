@@ -7,8 +7,8 @@ from typing import Any
 
 from fastapi import WebSocket
 
-# Snake order: A, B, B, A, A, B, B, A, A, B, B, A
-SNAKE_ORDER = ("A", "B", "B", "A", "A", "B", "B", "A", "A", "B", "B", "A")
+# Snake order: 10 picks (5 each), maintains snake fairness
+SNAKE_ORDER = ("A", "B", "B", "A", "A", "B", "B", "A", "A", "B")
 
 # All active sessions keyed by draft code
 _sessions: dict[str, "DraftSession"] = {}
@@ -22,6 +22,8 @@ class DraftSession:
     code: str
     captain_a: str
     captain_b: str
+    captain_a_id: int
+    captain_b_id: int
     token_a: str
     token_b: str
     pool: list[dict]  # [{id, name, rating}, ...]
@@ -33,13 +35,13 @@ class DraftSession:
     @property
     def whose_turn(self) -> str | None:
         """Return 'A' or 'B' for current turn, or None if draft complete."""
-        if len(self.picks) >= 12:
+        if len(self.picks) >= 10:
             return None
         return SNAKE_ORDER[len(self.picks)]
 
     @property
     def is_complete(self) -> bool:
-        return len(self.picks) >= 12
+        return len(self.picks) >= 10
 
     def captain_for_token(self, token: str) -> str | None:
         if token == self.token_a:
@@ -60,11 +62,12 @@ class DraftSession:
     def to_state_dict(self, my_captain: str | None = None) -> dict[str, Any]:
         """Full state snapshot for WS broadcast."""
         picked = self.picked_ids()
+        captain_ids = {self.captain_a_id, self.captain_b_id}
         my_team_ids = set(self.team_ids(my_captain)) if my_captain else set()
 
         available = []
         for p in sorted(self.pool, key=lambda x: -x["rating"]):
-            if p["id"] not in picked:
+            if p["id"] not in picked and p["id"] not in captain_ids:
                 synergy_pct = None
                 if my_captain and my_team_ids:
                     synergy_pct = self._avg_synergy(p["id"], my_team_ids)
@@ -94,11 +97,16 @@ class DraftSession:
 
     def _build_team(self, captain: str) -> list[dict]:
         pool_map = {p["id"]: p for p in self.pool}
-        return [
-            pool_map[p["player_id"]]
-            for p in self.picks
-            if p["captain"] == captain and p["player_id"] in pool_map
-        ]
+        captain_id = self.captain_a_id if captain == "A" else self.captain_b_id
+        team = []
+        # Prepend the captain
+        if captain_id in pool_map:
+            team.append(pool_map[captain_id])
+        # Then the drafted picks
+        for p in self.picks:
+            if p["captain"] == captain and p["player_id"] in pool_map:
+                team.append(pool_map[p["player_id"]])
+        return team
 
     def _avg_synergy(self, player_id: int, teammate_ids: set[int]) -> float:
         total = 0.0
@@ -113,6 +121,8 @@ class DraftSession:
 def create_draft(
     captain_a: str,
     captain_b: str,
+    captain_a_id: int,
+    captain_b_id: int,
     pool: list[dict],
     synergy: dict[str, float],
 ) -> DraftSession:
@@ -125,6 +135,8 @@ def create_draft(
         code=code,
         captain_a=captain_a,
         captain_b=captain_b,
+        captain_a_id=captain_a_id,
+        captain_b_id=captain_b_id,
         token_a=token_a,
         token_b=token_b,
         pool=pool,
