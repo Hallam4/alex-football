@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Clock, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../api/football";
 
 const RESULT_COLORS: Record<string, string> = {
@@ -46,8 +47,13 @@ export default function GameLog() {
   }
 
   return (
-    <div>
-      <h2 className="text-lg font-bold text-green-400 mb-3">Game History</h2>
+    <div className="animate-slide-up">
+      <div className="flex items-center gap-2 mb-4">
+        <Clock className="w-5 h-5 text-green-400" />
+        <h2 className="text-lg font-bold bg-gradient-to-r from-green-400 to-emerald-300 bg-clip-text text-transparent">
+          Game History
+        </h2>
+      </div>
 
       <div className="flex gap-3 mb-4 flex-wrap">
         <select
@@ -56,7 +62,7 @@ export default function GameLog() {
             setBlockId(e.target.value ? Number(e.target.value) : undefined);
             setPage(1);
           }}
-          className="bg-gray-800 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+          className="select-glass"
         >
           <option value="">All blocks</option>
           {blocks?.map((b) => (
@@ -68,15 +74,26 @@ export default function GameLog() {
       </div>
 
       {isLoading ? (
-        <p className="text-gray-400">Loading...</p>
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="glass-card p-4 space-y-2">
+              <div className="skeleton h-4 w-48" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
+                {Array.from({ length: 4 }).map((_, j) => (
+                  <div key={j} className="skeleton h-10" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <>
           {Object.entries(grouped).map(([key, games]) => {
             const first = games[0];
             return (
-            <div key={key} className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-gray-400">{key}</h3>
+            <div key={key} className="glass-card p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500">{key}</h3>
                 <button
                   onClick={() => {
                     if (!confirm(`Delete all ${games.length} results for this game?`)) return;
@@ -87,27 +104,28 @@ export default function GameLog() {
                     });
                   }}
                   disabled={deleteMutation.isPending}
-                  className="text-xs bg-red-900/50 hover:bg-red-800 text-red-300 px-2 py-0.5 rounded transition-colors disabled:opacity-50"
+                  className="ml-auto flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors disabled:opacity-50"
                 >
+                  <Trash2 className="w-3 h-3" />
                   Delete
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
                 {games.map((g, i) => (
                   <div
                     key={i}
-                    className="bg-gray-800 rounded px-3 py-2 flex justify-between items-center text-sm"
+                    className="bg-white/[0.03] rounded-xl px-3 py-2 flex justify-between items-center text-sm"
                   >
-                    <span>
+                    <span className="text-gray-300">
                       {g.player_name}
                       {g.is_sub && (
-                        <span className="text-xs text-gray-500 ml-1">(sub)</span>
+                        <span className="text-xs text-gray-600 ml-1">(sub)</span>
                       )}
                     </span>
                     <span className={`font-bold ${RESULT_COLORS[g.result] ?? ""}`}>
                       {g.result}
                       {g.goals_for != null && (
-                        <span className="text-xs text-gray-500 ml-1">
+                        <span className="text-xs text-gray-600 ml-1">
                           {g.goals_for}-{g.goals_against}
                         </span>
                       )}
@@ -120,23 +138,25 @@ export default function GameLog() {
           })}
 
           {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-4">
+            <div className="flex justify-center items-center gap-2 mt-4">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1 rounded bg-gray-800 text-sm disabled:opacity-50 hover:bg-gray-700"
+                className="btn-secondary flex items-center gap-1 !px-3 !py-1.5"
               >
+                <ChevronLeft className="w-4 h-4" />
                 Prev
               </button>
-              <span className="px-3 py-1 text-sm text-gray-400">
+              <span className="px-3 py-1 text-sm text-gray-500">
                 {page} / {totalPages}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1 rounded bg-gray-800 text-sm disabled:opacity-50 hover:bg-gray-700"
+                className="btn-secondary flex items-center gap-1 !px-3 !py-1.5"
               >
                 Next
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           )}

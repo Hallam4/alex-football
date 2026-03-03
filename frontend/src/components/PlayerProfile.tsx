@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import { api } from "../api/football";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -8,9 +9,16 @@ import {
 } from "recharts";
 
 const FORM_COLORS: Record<string, string> = {
-  W: "bg-green-600",
-  D: "bg-yellow-600",
-  L: "bg-red-600",
+  W: "bg-gradient-to-br from-green-500 to-green-700",
+  D: "bg-gradient-to-br from-yellow-500 to-yellow-700",
+  L: "bg-gradient-to-br from-red-500 to-red-700",
+};
+
+const tooltipStyle = {
+  backgroundColor: "rgba(0,0,0,0.7)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  borderRadius: "12px",
+  backdropFilter: "blur(12px)",
 };
 
 export default function PlayerProfile({
@@ -31,7 +39,19 @@ export default function PlayerProfile({
     enabled: !!data,
   });
 
-  if (isLoading) return <p className="text-gray-400">Loading player...</p>;
+  if (isLoading) {
+    return (
+      <div className="animate-slide-up space-y-4">
+        <div className="skeleton h-6 w-32" />
+        <div className="skeleton h-40 w-full" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="skeleton h-20" />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (error) return <p className="text-red-400">Error: {(error as Error).message}</p>;
   if (!data) return null;
 
@@ -53,55 +73,68 @@ export default function PlayerProfile({
     : [];
 
   return (
-    <div>
+    <div className="animate-slide-up">
       <button
         onClick={onBack}
-        className="text-sm text-gray-400 hover:text-white mb-4 inline-block"
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-white mb-4 transition-colors"
       >
-        &larr; Back to players
+        <ArrowLeft className="w-4 h-4" />
+        Back to players
       </button>
 
-      <div className="bg-gray-800 rounded-xl p-5 mb-4">
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-2xl font-bold text-green-400">{data.name}</h2>
-          {data.is_active && (
-            <span className="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
-              Active
-            </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-          {[
-            { label: "Games", value: data.total_games },
-            { label: "Wins", value: data.total_wins },
-            { label: "Win Rate", value: `${data.win_rate}%` },
-            { label: "Blocks", value: data.blocks_played },
-          ].map((s) => (
-            <div key={s.label} className="bg-gray-700 rounded-lg p-3">
-              <div className="text-2xl font-bold">{s.value}</div>
-              <div className="text-xs text-gray-400">{s.label}</div>
+      {/* Hero Card */}
+      <div className="glass-card overflow-hidden mb-4">
+        <div className="h-1 bg-gradient-to-r from-green-500 to-emerald-400" />
+        <div className="p-5">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-xl font-bold text-white shadow-glow-sm">
+              {data.name.charAt(0)}
             </div>
-          ))}
-        </div>
+            <div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-green-400 to-emerald-300 bg-clip-text text-transparent">
+                {data.name}
+              </h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                {data.is_active && <span className="badge-active">Active</span>}
+                {data.first_game_date && (
+                  <span className="text-xs text-gray-500">
+                    Playing since {data.first_game_date}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
 
-        {data.first_game_date && (
-          <p className="text-sm text-gray-400 mt-3">
-            Playing since {data.first_game_date}
-          </p>
-        )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Games", value: data.total_games },
+              { label: "Wins", value: data.total_wins },
+              { label: "Win Rate", value: `${data.win_rate}%` },
+              { label: "Blocks", value: data.blocks_played },
+            ].map((s) => (
+              <div key={s.label} className="stat-card p-4 text-center">
+                <div className="relative text-2xl font-bold bg-gradient-to-r from-green-400 to-emerald-300 bg-clip-text text-transparent">
+                  {s.value}
+                </div>
+                <div className="relative text-[11px] uppercase tracking-wider text-gray-500 mt-1">
+                  {s.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {data.recent_form.length > 0 && (
-        <div className="bg-gray-800 rounded-xl p-5 mb-4">
-          <h3 className="text-sm font-semibold text-gray-400 mb-2">
+        <div className="glass-card p-5 mb-4">
+          <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500 mb-3">
             Recent Form (last {data.recent_form.length})
           </h3>
           <div className="flex gap-2">
             {data.recent_form.map((r, i) => (
               <span
                 key={i}
-                className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold ${
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white hover:scale-110 transition-transform ${
                   FORM_COLORS[r] ?? "bg-gray-600"
                 }`}
               >
@@ -113,22 +146,21 @@ export default function PlayerProfile({
       )}
 
       {stats && (stats.blocks.length > 0 || data.total_games > 0) && (
-        <div className="bg-gray-800 rounded-xl p-5 mb-4">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">Performance Charts</h3>
+        <div className="glass-card p-5 mb-4">
+          <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500 mb-4">
+            Performance Charts
+          </h3>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {stats.blocks.length > 0 && (
               <div>
-                <p className="text-xs text-gray-400 mb-2 text-center">Win Rate by Block</p>
+                <p className="text-xs text-gray-500 mb-2 text-center">Win Rate by Block</p>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={stats.blocks}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="block_name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#9ca3af" }}
-                    />
-                    <Bar dataKey="win_rate" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="block_name" tick={{ fill: "#6b7280", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} domain={[0, 100]} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: "#9ca3af" }} />
+                    <Bar dataKey="win_rate" fill="#22c55e" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -136,7 +168,7 @@ export default function PlayerProfile({
 
             {pieData.length > 0 && (
               <div>
-                <p className="text-xs text-gray-400 mb-2 text-center">W/D/L Distribution</p>
+                <p className="text-xs text-gray-500 mb-2 text-center">W/D/L Distribution</p>
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
                     <Pie
@@ -153,14 +185,12 @@ export default function PlayerProfile({
                         <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                    />
+                    <Tooltip contentStyle={tooltipStyle} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex justify-center gap-4 text-xs mt-1">
                   {pieData.map((d) => (
-                    <span key={d.name} className="flex items-center gap-1">
+                    <span key={d.name} className="flex items-center gap-1 text-gray-400">
                       <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: d.color }} />
                       {d.name} ({d.value})
                     </span>
@@ -171,16 +201,13 @@ export default function PlayerProfile({
 
             {rollingData.length > 1 && (
               <div>
-                <p className="text-xs text-gray-400 mb-2 text-center">Rolling Form (6-game win %)</p>
+                <p className="text-xs text-gray-500 mb-2 text-center">Rolling Form (6-game win %)</p>
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={rollingData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="game" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} domain={[0, 100]} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
-                      labelStyle={{ color: "#9ca3af" }}
-                    />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="game" tick={{ fill: "#6b7280", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} domain={[0, 100]} />
+                    <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: "#9ca3af" }} />
                     <Line type="monotone" dataKey="winRate" stroke="#22c55e" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -191,40 +218,37 @@ export default function PlayerProfile({
       )}
 
       {data.head_to_head.length > 0 && (
-        <div className="bg-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">
+        <div className="glass-card p-5">
+          <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500 mb-3">
             Head-to-Head (same team synergy)
           </h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-premium">
               <thead>
-                <tr className="text-gray-400 border-b border-gray-700">
-                  <th className="px-2 py-2 text-left">Partner</th>
-                  <th className="px-2 py-2 text-right">Played</th>
-                  <th className="px-2 py-2 text-right">W</th>
-                  <th className="px-2 py-2 text-right">D</th>
-                  <th className="px-2 py-2 text-right">L</th>
-                  <th className="px-2 py-2 text-right">Win%</th>
+                <tr>
+                  <th className="px-2 py-2.5 text-left">Partner</th>
+                  <th className="px-2 py-2.5 text-right">Played</th>
+                  <th className="px-2 py-2.5 text-right">W</th>
+                  <th className="px-2 py-2.5 text-right">D</th>
+                  <th className="px-2 py-2.5 text-right">L</th>
+                  <th className="px-2 py-2.5 text-right">Win%</th>
                 </tr>
               </thead>
               <tbody>
                 {data.head_to_head.map((h) => (
-                  <tr
-                    key={h.opponent_id}
-                    className="border-b border-gray-700/50"
-                  >
-                    <td className="px-2 py-2">{h.opponent_name}</td>
-                    <td className="px-2 py-2 text-right">{h.played}</td>
-                    <td className="px-2 py-2 text-right text-green-400">
+                  <tr key={h.opponent_id}>
+                    <td className="px-2 py-2.5">{h.opponent_name}</td>
+                    <td className="px-2 py-2.5 text-right text-gray-400">{h.played}</td>
+                    <td className="px-2 py-2.5 text-right text-green-400">
                       {h.wins}
                     </td>
-                    <td className="px-2 py-2 text-right text-yellow-400">
+                    <td className="px-2 py-2.5 text-right text-yellow-400">
                       {h.draws}
                     </td>
-                    <td className="px-2 py-2 text-right text-red-400">
+                    <td className="px-2 py-2.5 text-right text-red-400">
                       {h.losses}
                     </td>
-                    <td className="px-2 py-2 text-right font-semibold">
+                    <td className="px-2 py-2.5 text-right font-semibold">
                       {h.played > 0
                         ? ((h.wins / h.played) * 100).toFixed(0)
                         : 0}
