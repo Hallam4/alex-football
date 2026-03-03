@@ -114,10 +114,12 @@ export function DraftBoard({
   code,
   token,
   onBack,
+  onDone,
 }: {
   code: string;
   token: string;
   onBack?: () => void;
+  onDone?: () => void;
 }) {
   const { state, status, error, pick } = useDraftWebSocket(code, token);
 
@@ -170,8 +172,16 @@ export function DraftBoard({
       )}
 
       {state.is_complete && (
-        <div className="rounded-lg px-4 py-3 mb-4 text-center font-bold text-sm bg-green-900/50 text-green-300 border border-green-700">
-          Draft complete!
+        <div className="rounded-lg px-4 py-3 mb-4 flex items-center justify-between bg-green-900/50 border border-green-700">
+          <span className="font-bold text-sm text-green-300">Draft complete!</span>
+          {onDone && (
+            <button
+              onClick={onDone}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 px-5 rounded-lg text-sm transition-colors"
+            >
+              Done
+            </button>
+          )}
         </div>
       )}
 

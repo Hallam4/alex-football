@@ -51,6 +51,7 @@ export default function TeamPicker() {
   const [gameDate, setGameDate] = useState("");
   const [scoreA, setScoreA] = useState<number | "">("");
   const [scoreB, setScoreB] = useState<number | "">("");
+  const [nextGameDate, setNextGameDate] = useState<string | null>(null);
 
   // Restore selected set from localStorage-loaded savedIds
   useEffect(() => {
@@ -168,6 +169,23 @@ export default function TeamPicker() {
     setDraftInfo(null);
   };
 
+  const handleDraftDone = () => {
+    // Compute next Wednesday
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun, 3=Wed
+    const daysUntilWed = (3 - day + 7) % 7 || 7;
+    const nextWed = new Date(now);
+    nextWed.setDate(now.getDate() + daysUntilWed);
+    const yyyy = nextWed.getFullYear();
+    const mm = String(nextWed.getMonth() + 1).padStart(2, "0");
+    const dd = String(nextWed.getDate()).padStart(2, "0");
+    setNextGameDate(`${yyyy}-${mm}-${dd}`);
+    // Return to saved phase
+    setLiveCode(null);
+    setLiveToken(null);
+    setDraftInfo(null);
+  };
+
   const savedPlayers = savedIds
     ? players.filter((p) => savedIds.includes(p.id))
     : [];
@@ -176,7 +194,7 @@ export default function TeamPicker() {
 
   // --- Phase: Draft Board ---
   if (phase === "draftBoard") {
-    return <DraftBoard code={liveCode!} token={liveToken!} onBack={handleDraftBack} />;
+    return <DraftBoard code={liveCode!} token={liveToken!} onBack={handleDraftBack} onDone={handleDraftDone} />;
   }
 
   // --- Phase: Draft Share Links ---
@@ -364,6 +382,20 @@ export default function TeamPicker() {
             </p>
           )}
         </div>
+
+        {nextGameDate && (
+          <div className="bg-gray-800 rounded-xl p-4 mt-4 text-center">
+            <span className="text-sm text-gray-400">Next game: </span>
+            <span className="text-sm font-bold text-green-400">
+              {new Date(nextGameDate + "T00:00:00").toLocaleDateString("en-GB", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+        )}
       </div>
     );
   }

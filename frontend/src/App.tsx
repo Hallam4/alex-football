@@ -17,7 +17,11 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("league");
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("draft") && params.get("token")) return "picker";
+    return "league";
+  });
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
 
   const handlePlayerClick = (playerId: number) => {
