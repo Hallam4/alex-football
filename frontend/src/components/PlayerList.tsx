@@ -18,6 +18,17 @@ export default function PlayerList({
   });
   const [filter, setFilter] = useState("");
   const [showActive, setShowActive] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const createMutation = useMutation({
+    mutationFn: api.createPlayer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["players"] });
+      setNewName("");
+      setShowAddForm(false);
+    },
+  });
 
   if (isLoading) return <p className="text-gray-400">Loading players...</p>;
   if (error) return <p className="text-red-400">Error: {(error as Error).message}</p>;
@@ -32,7 +43,7 @@ export default function PlayerList({
   return (
     <div>
       <h2 className="text-lg font-bold text-green-400 mb-3">Players</h2>
-      <div className="flex gap-3 mb-4">
+      <div className="flex gap-3 mb-4 flex-wrap items-center">
         <input
           type="text"
           placeholder="Search players..."
@@ -49,7 +60,43 @@ export default function PlayerList({
           />
           Active only
         </label>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="text-xs bg-green-900/50 hover:bg-green-800 text-green-300 px-2 py-1 rounded transition-colors"
+        >
+          + Add Player
+        </button>
       </div>
+
+      {showAddForm && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newName.trim()) createMutation.mutate({ name: newName.trim() });
+          }}
+          className="flex gap-2 mb-4"
+        >
+          <input
+            type="text"
+            placeholder="Player name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            className="bg-gray-800 text-white rounded-lg px-3 py-2 text-sm flex-1 max-w-xs focus:outline-none focus:ring-1 focus:ring-green-500"
+          />
+          <button
+            type="submit"
+            disabled={createMutation.isPending || !newName.trim()}
+            className="text-sm bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-3 py-2 rounded transition-colors"
+          >
+            {createMutation.isPending ? "Adding..." : "Add"}
+          </button>
+          {createMutation.isError && (
+            <span className="text-red-400 text-sm self-center">
+              {(createMutation.error as Error).message}
+            </span>
+          )}
+        </form>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {filtered.map((p) => (

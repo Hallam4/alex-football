@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/football";
 
 const RESULT_COLORS: Record<string, string> = {
@@ -9,8 +9,18 @@ const RESULT_COLORS: Record<string, string> = {
 };
 
 export default function GameLog() {
+  const queryClient = useQueryClient();
   const [blockId, setBlockId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteGame,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      queryClient.invalidateQueries({ queryKey: ["league"] });
+      queryClient.invalidateQueries({ queryKey: ["players"] });
+    },
+  });
 
   const { data: blocks } = useQuery({
     queryKey: ["blocks"],
@@ -61,9 +71,27 @@ export default function GameLog() {
         <p className="text-gray-400">Loading...</p>
       ) : (
         <>
-          {Object.entries(grouped).map(([key, games]) => (
+          {Object.entries(grouped).map(([key, games]) => {
+            const first = games[0];
+            return (
             <div key={key} className="mb-4">
-              <h3 className="text-sm font-semibold text-gray-400 mb-2">{key}</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-gray-400">{key}</h3>
+                <button
+                  onClick={() => {
+                    if (!confirm(`Delete all ${games.length} results for this game?`)) return;
+                    deleteMutation.mutate({
+                      block_id: first.block_id,
+                      week_number: first.week_number,
+                      game_date: first.game_date ?? "",
+                    });
+                  }}
+                  disabled={deleteMutation.isPending}
+                  className="text-xs bg-red-900/50 hover:bg-red-800 text-red-300 px-2 py-0.5 rounded transition-colors disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
                 {games.map((g, i) => (
                   <div
@@ -88,7 +116,8 @@ export default function GameLog() {
                 ))}
               </div>
             </div>
-          ))}
+          );
+          })}
 
           {totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-4">

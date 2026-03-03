@@ -60,6 +60,8 @@ class PlayerProfile(BaseModel):
 
 # --- Games ---
 class GameRow(BaseModel):
+    block_id: int
+    player_id: int
     game_date: Optional[date]
     week_number: int
     block_name: str
@@ -165,3 +167,30 @@ class CreateDraftResponse(BaseModel):
     code: str
     token_a: str
     token_b: str
+
+
+# --- Game Delete ---
+class GameDeleteRequest(BaseModel):
+    block_id: int
+    week_number: int
+    game_date: date
+
+
+# --- Admin ---
+class CreatePlayerRequest(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+class CreateBlockRequest(BaseModel):
+    name: str
+    start_date: Optional[date] = None
+    quarter: Optional[int] = None
+
+
+class AwardMomRequest(BaseModel):
+    block_id: int
+    week_number: int
+    game_date: date
+    player_id: int
+    votes: int = 0

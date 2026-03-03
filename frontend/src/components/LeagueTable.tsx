@@ -23,6 +23,22 @@ export default function LeagueTable({
   });
   const [sortKey, setSortKey] = useState<SortKey>("ppg");
   const [sortAsc, setSortAsc] = useState(false);
+  const [showBlockForm, setShowBlockForm] = useState(false);
+  const [blockName, setBlockName] = useState("");
+  const [blockDate, setBlockDate] = useState("");
+  const [blockQuarter, setBlockQuarter] = useState("");
+
+  const createBlockMutation = useMutation({
+    mutationFn: api.createBlock,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["league"] });
+      setBlockName("");
+      setBlockDate("");
+      setBlockQuarter("");
+      setShowBlockForm(false);
+    },
+  });
 
   const recalcMutation = useMutation({
     mutationFn: (blockId: number) => api.recalculateStandings(blockId),
@@ -72,7 +88,66 @@ export default function LeagueTable({
         >
           {recalcMutation.isPending ? "Recalculating..." : "Recalculate"}
         </button>
+        <button
+          onClick={() => setShowBlockForm(!showBlockForm)}
+          className="text-xs bg-green-900/50 hover:bg-green-800 text-green-300 px-2 py-1 rounded transition-colors"
+        >
+          + New Block
+        </button>
       </div>
+
+      {showBlockForm && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (blockName.trim()) {
+              createBlockMutation.mutate({
+                name: blockName.trim(),
+                start_date: blockDate || null,
+                quarter: blockQuarter ? Number(blockQuarter) : null,
+              });
+            }
+          }}
+          className="flex gap-2 mb-4 flex-wrap"
+        >
+          <input
+            type="text"
+            placeholder="Block name"
+            value={blockName}
+            onChange={(e) => setBlockName(e.target.value)}
+            className="bg-gray-800 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+          />
+          <input
+            type="date"
+            value={blockDate}
+            onChange={(e) => setBlockDate(e.target.value)}
+            className="bg-gray-800 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+          />
+          <select
+            value={blockQuarter}
+            onChange={(e) => setBlockQuarter(e.target.value)}
+            className="bg-gray-800 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+          >
+            <option value="">Quarter</option>
+            <option value="1">Q1</option>
+            <option value="2">Q2</option>
+            <option value="3">Q3</option>
+            <option value="4">Q4</option>
+          </select>
+          <button
+            type="submit"
+            disabled={createBlockMutation.isPending || !blockName.trim()}
+            className="text-sm bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white px-3 py-2 rounded transition-colors"
+          >
+            {createBlockMutation.isPending ? "Creating..." : "Create"}
+          </button>
+          {createBlockMutation.isError && (
+            <span className="text-red-400 text-sm self-center">
+              {(createBlockMutation.error as Error).message}
+            </span>
+          )}
+        </form>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

@@ -1,6 +1,10 @@
 """Reusable DB queries for Alex Football API."""
 
+from collections import defaultdict
+from itertools import combinations
+
 from sqlalchemy import func, case, desc, delete, and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -163,6 +167,8 @@ async def get_games(db: AsyncSession, block_id: int | None = None, page: int = 1
     """Get game log, optionally filtered by block."""
     query = (
         select(
+            GameResult.block_id,
+            GameResult.player_id,
             GameResult.game_date,
             GameResult.week_number,
             Block.name.label("block_name"),
@@ -193,6 +199,8 @@ async def get_games(db: AsyncSession, block_id: int | None = None, page: int = 1
     return {
         "games": [
             {
+                "block_id": r.block_id,
+                "player_id": r.player_id,
                 "game_date": r.game_date,
                 "week_number": r.week_number,
                 "block_name": r.block_name,
@@ -432,3 +440,115 @@ async def get_player_stats(db: AsyncSession, player_id: int):
     ]
 
     return {"blocks": blocks, "games": game_list}
+
+
+async def recalculate_h2h(db: AsyncSession):
+    """Rebuild the entire HeadToHead table from GameResult data.
+
+    Teammate detection: players sharing the same (block_id, week_number, game_date, result)
+    were on the same team. Draws are skipped — both teams get result 'D' with identical goals,
+    so team membership is ambiguous.
+    """
+    # Fetch all non-draw game results
+    rows = (await db.execute(
+        select(
+            GameResult.block_id,
+            GameResult.week_number,
+            GameResult.game_date,
+            GameResult.result,
+            GameResult.player_id,
+            GameResult.goals_for,
+        )
+        .where(GameResult.result != "D")
+    )).all()
+
+    # Group by (block_id, week_number, game_date, result) to identify teams
+    teams: dict[tuple, list[tuple[int, int | None]]] = defaultdict(list)
+    for r in rows:
+        key = (r.block_id, r.week_number, r.game_date, r.result)
+        teams[key].append((r.player_id, r.goals_for))
+
+    # Aggregate per-pair stats
+    pair_stats: dict[tuple[int, int], dict] = defaultdict(
+        lambda: {"played": 0, "wins": 0, "losses": 0, "draws": 0, "goals_scored": 0}
+    )
+
+    for (block_id, week_number, game_date, result), members in teams.items():
+        player_ids = [pid for pid, _ in members]
+        goals = sum(g for _, g in members if g is not None)
+
+        for a, b in combinations(player_ids, 2):
+            key = (min(a, b), max(a, b))
+            pair_stats[key]["played"] += 1
+            if result == "W":
+                pair_stats[key]["wins"] += 1
+            elif result == "L":
+                pair_stats[key]["losses"] += 1
+            pair_stats[key]["goals_scored"] += goals
+
+    # Delete all existing H2H rows, insert new ones
+    await db.execute(delete(HeadToHead))
+    for (a_id, b_id), stats in pair_stats.items():
+        db.add(HeadToHead(
+            player_a_id=a_id,
+            player_b_id=b_id,
+            played=stats["played"],
+            wins=stats["wins"],
+            draws=stats["draws"],
+            losses=stats["losses"],
+            goals_scored=stats["goals_scored"],
+        ))
+
+    await db.commit()
+
+
+async def delete_game(db: AsyncSession, block_id: int, week_number: int, game_date):
+    """Delete all GameResult rows matching the given game identifier. Returns row count."""
+    result = await db.execute(
+        delete(GameResult).where(
+            GameResult.block_id == block_id,
+            GameResult.week_number == week_number,
+            GameResult.game_date == game_date,
+        )
+    )
+    await db.commit()
+    return result.rowcount
+
+
+async def create_player(db: AsyncSession, name: str, is_active: bool = True):
+    """Add a new player. Raises IntegrityError if name already exists."""
+    player = Player(name=name, is_active=is_active)
+    db.add(player)
+    try:
+        await db.commit()
+        await db.refresh(player)
+        return {"id": player.id, "name": player.name, "is_active": player.is_active}
+    except IntegrityError:
+        await db.rollback()
+        raise
+
+
+async def create_block(db: AsyncSession, name: str, start_date=None, quarter=None):
+    """Add a new block/season."""
+    block = Block(name=name, start_date=start_date, quarter=quarter)
+    db.add(block)
+    await db.commit()
+    await db.refresh(block)
+    return {"id": block.id, "name": block.name, "start_date": block.start_date, "quarter": block.quarter}
+
+
+async def award_mom(db: AsyncSession, block_id: int, week_number: int, game_date, player_id: int, votes: int = 0):
+    """Award MoM to a player and recalculate standings for the block."""
+    award = MomAward(
+        block_id=block_id,
+        week_number=week_number,
+        game_date=game_date,
+        player_id=player_id,
+        votes=votes,
+        score=float(votes),
+    )
+    db.add(award)
+    await db.commit()
+    # MoM affects league points, so recalculate standings
+    await recalculate_standings(db, block_id)
+    return {"status": "ok"}

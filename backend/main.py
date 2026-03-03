@@ -20,11 +20,13 @@ from models import (
     MomResponse, MomEntry, BlockSummary, GameEntryRequest,
     BlockStats, GameResultEntry, PlayerStatsResponse,
     CreateDraftRequest, CreateDraftResponse,
+    GameDeleteRequest, CreatePlayerRequest, CreateBlockRequest, AwardMomRequest,
 )
 from queries import (
     get_league_table, get_all_players, get_player_profile,
     get_games, get_mom_leaderboard, get_blocks, get_player_ratings, get_pair_synergy,
     recalculate_standings, get_player_stats,
+    recalculate_h2h, delete_game, create_player, create_block, award_mom,
 )
 from team_picker import pick_teams
 from draft import create_draft, get_draft
@@ -148,9 +150,9 @@ async def blocks(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/games/add")
 async def add_game(req: GameEntryRequest, db: AsyncSession = Depends(get_db)):
-    from db_models import GameResult
+    from db_models import GameResult as GameResultModel
     for p in req.players:
-        db.add(GameResult(
+        db.add(GameResultModel(
             block_id=req.block_id,
             week_number=req.week_number,
             game_date=req.game_date,
@@ -162,6 +164,8 @@ async def add_game(req: GameEntryRequest, db: AsyncSession = Depends(get_db)):
             goals_against=p.goals_against,
         ))
     await db.commit()
+    await recalculate_standings(db, req.block_id)
+    await recalculate_h2h(db)
     return {"status": "ok", "players_added": len(req.players)}
 
 
@@ -171,6 +175,44 @@ async def recalculate_block(block_id: int, db: AsyncSession = Depends(get_db)):
     if block_name is None:
         raise HTTPException(status_code=404, detail="Block not found")
     return {"status": "ok", "block_name": block_name}
+
+
+@app.post("/api/h2h/recalculate")
+async def recalculate_h2h_endpoint(db: AsyncSession = Depends(get_db)):
+    await recalculate_h2h(db)
+    return {"status": "ok"}
+
+
+@app.delete("/api/games")
+async def delete_game_endpoint(req: GameDeleteRequest, db: AsyncSession = Depends(get_db)):
+    count = await delete_game(db, req.block_id, req.week_number, req.game_date)
+    if count == 0:
+        raise HTTPException(status_code=404, detail="No matching games found")
+    await recalculate_standings(db, req.block_id)
+    await recalculate_h2h(db)
+    return {"status": "ok", "rows_deleted": count}
+
+
+@app.post("/api/players")
+async def create_player_endpoint(req: CreatePlayerRequest, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy.exc import IntegrityError
+    try:
+        result = await create_player(db, req.name, req.is_active)
+        return result
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail=f"Player '{req.name}' already exists")
+
+
+@app.post("/api/blocks")
+async def create_block_endpoint(req: CreateBlockRequest, db: AsyncSession = Depends(get_db)):
+    result = await create_block(db, req.name, req.start_date, req.quarter)
+    return result
+
+
+@app.post("/api/mom")
+async def award_mom_endpoint(req: AwardMomRequest, db: AsyncSession = Depends(get_db)):
+    result = await award_mom(db, req.block_id, req.week_number, req.game_date, req.player_id, req.votes)
+    return result
 
 
 @app.get("/api/players/{player_id}/stats", response_model=PlayerStatsResponse)

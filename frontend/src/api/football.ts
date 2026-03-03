@@ -54,6 +54,8 @@ export interface PlayerProfile {
 }
 
 export interface GameRow {
+  block_id: number;
+  player_id: number;
   game_date: string | null;
   week_number: number;
   block_name: string;
@@ -154,6 +156,33 @@ export interface CreateDraftResponse {
   token_b: string;
 }
 
+// --- Game Delete ---
+export interface GameDeleteRequest {
+  block_id: number;
+  week_number: number;
+  game_date: string;
+}
+
+// --- Admin ---
+export interface CreatePlayerRequest {
+  name: string;
+  is_active?: boolean;
+}
+
+export interface CreateBlockRequest {
+  name: string;
+  start_date?: string | null;
+  quarter?: number | null;
+}
+
+export interface AwardMomRequest {
+  block_id: number;
+  week_number: number;
+  game_date: string;
+  player_id: number;
+  votes?: number;
+}
+
 export interface DraftPlayer {
   id: number;
   name: string;
@@ -219,6 +248,19 @@ async function patchJson<T>(url: string): Promise<T> {
   return res.json();
 }
 
+async function deleteJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
 export const api = {
   getLeague: () => fetchJson<LeagueResponse>(`${BASE}/league`),
   getPlayers: () => fetchJson<PlayerSummary[]>(`${BASE}/players`),
@@ -248,4 +290,12 @@ export const api = {
     ),
   getPlayerStats: (id: number) =>
     fetchJson<PlayerStatsResponse>(`${BASE}/players/${id}/stats`),
+  deleteGame: (req: GameDeleteRequest) =>
+    deleteJson<{ status: string; rows_deleted: number }>(`${BASE}/games`, req),
+  createPlayer: (req: CreatePlayerRequest) =>
+    postJson<{ id: number; name: string; is_active: boolean }>(`${BASE}/players`, req),
+  createBlock: (req: CreateBlockRequest) =>
+    postJson<{ id: number; name: string; start_date: string | null; quarter: number | null }>(`${BASE}/blocks`, req),
+  awardMom: (req: AwardMomRequest) =>
+    postJson<{ status: string }>(`${BASE}/mom`, req),
 };
