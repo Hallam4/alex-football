@@ -177,6 +177,13 @@ export default function TeamPicker() {
     localStorage.removeItem("pickTeams.draftTeams");
   };
 
+  const handleClearDraft = () => {
+    setNextGameDate(null);
+    setDraftTeams(null);
+    localStorage.removeItem("pickTeams.nextGameDate");
+    localStorage.removeItem("pickTeams.draftTeams");
+  };
+
   const handleDraftBack = () => {
     setLiveCode(null);
     setLiveToken(null);
@@ -399,37 +406,43 @@ export default function TeamPicker() {
               Error: {(draftMutation.error as Error).message}
             </p>
           )}
-        </div>
 
-        {nextGameDate && (
-          <div className="bg-gray-800 rounded-xl p-4 mt-4">
-            <div className="text-center mb-4">
-              <span className="text-sm text-gray-400">Next game: </span>
-              <span className="text-sm font-bold text-green-400">
-                {new Date(nextGameDate + "T00:00:00").toLocaleDateString("en-GB", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </span>
-            </div>
-            {draftTeams && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TeamCard
-                  title={`${draftTeams.captain_a}'s Team`}
-                  players={draftTeams.team_a}
-                  color="green"
-                />
-                <TeamCard
-                  title={`${draftTeams.captain_b}'s Team`}
-                  players={draftTeams.team_b}
-                  color="blue"
-                />
+          {nextGameDate && (
+            <div className="mt-4">
+              <div className="text-center mb-4">
+                <span className="text-sm text-gray-400">Next game: </span>
+                <span className="text-sm font-bold text-green-400">
+                  {new Date(nextGameDate + "T00:00:00").toLocaleDateString("en-GB", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </span>
+                <button
+                  onClick={handleClearDraft}
+                  className="text-sm text-red-400 hover:text-red-300 transition-colors ml-3"
+                >
+                  Clear
+                </button>
               </div>
-            )}
-          </div>
-        )}
+              {draftTeams && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <TeamCard
+                    title={`${draftTeams.captain_a}'s Team`}
+                    players={draftTeams.team_a}
+                    color="green"
+                  />
+                  <TeamCard
+                    title={`${draftTeams.captain_b}'s Team`}
+                    players={draftTeams.team_b}
+                    color="blue"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -508,7 +521,7 @@ function TeamCard({
       </h3>
       <div className="space-y-2">
         {players
-          .sort((a, b) => b.rating - a.rating)
+          .sort((a, b) => a.name.localeCompare(b.name))
           .map((p) => (
             <div
               key={p.id}
