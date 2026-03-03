@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, CreateDraftResponse, DraftPlayer } from "../api/football";
 import { useDraftWebSocket } from "../hooks/useDraftWebSocket";
 
-const SNAKE_ORDER = ["A", "B", "B", "A", "A", "B", "B", "A", "A", "B"];
+const SNAKE_ORDER = ["A", "B", "B", "A", "B", "A", "B", "A", "B", "A"];
 
 interface Props {
   initialCode?: string | null;

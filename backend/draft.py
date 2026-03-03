@@ -7,8 +7,8 @@ from typing import Any
 
 from fastapi import WebSocket
 
-# Snake order: 10 picks (5 each), maintains snake fairness
-SNAKE_ORDER = ("A", "B", "B", "A", "A", "B", "B", "A", "A", "B")
+# Snake order: 10 picks (5 each). B gets consecutive picks 2-3 only.
+SNAKE_ORDER = ("A", "B", "B", "A", "B", "A", "B", "A", "B", "A")
 
 # All active sessions keyed by draft code
 _sessions: dict[str, "DraftSession"] = {}
