@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import LeagueTable from "./components/LeagueTable";
 import PlayerList from "./components/PlayerList";
 import PlayerProfile from "./components/PlayerProfile";
 import TeamPicker from "./components/TeamPicker";
 import GameLog from "./components/GameLog";
 import MomLeaderboard from "./components/MomLeaderboard";
+import SnakeDraft from "./components/SnakeDraft";
 
-type Tab = "league" | "players" | "picker" | "history" | "mom";
+type Tab = "league" | "players" | "picker" | "draft" | "history" | "mom";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "league", label: "League" },
   { id: "players", label: "Players" },
   { id: "picker", label: "Pick Teams" },
+  { id: "draft", label: "Snake Draft" },
   { id: "history", label: "History" },
   { id: "mom", label: "MoM" },
 ];
@@ -19,6 +21,22 @@ const TABS: { id: Tab; label: string }[] = [
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("league");
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const [draftCode, setDraftCode] = useState<string | null>(null);
+  const [draftToken, setDraftToken] = useState<string | null>(null);
+
+  // Detect ?draft=...&token=... URL params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("draft");
+    const token = params.get("token");
+    if (code && token) {
+      setDraftCode(code);
+      setDraftToken(token);
+      setActiveTab("draft");
+      // Clean URL without reloading
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const handlePlayerClick = (playerId: number) => {
     setSelectedPlayerId(playerId);
@@ -65,6 +83,9 @@ export default function App() {
           />
         )}
         {activeTab === "picker" && <TeamPicker />}
+        {activeTab === "draft" && (
+          <SnakeDraft initialCode={draftCode} initialToken={draftToken} />
+        )}
         {activeTab === "history" && <GameLog />}
         {activeTab === "mom" && <MomLeaderboard />}
       </main>

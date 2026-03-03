@@ -131,3 +131,16 @@ class GameEntryRequest(BaseModel):
     week_number: int
     game_date: date
     players: list[GameEntryPlayer]
+
+
+# --- Snake Draft ---
+class CreateDraftRequest(BaseModel):
+    captain_a: str
+    captain_b: str
+    player_ids: list[int]
+
+
+class CreateDraftResponse(BaseModel):
+    code: str
+    token_a: str
+    token_b: str

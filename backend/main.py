@@ -4,11 +4,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.websockets import WebSocketDisconnect
 
 from database import engine, get_db
 from db_models import Base
@@ -16,12 +17,14 @@ from models import (
     LeagueResponse, LeagueRow, PlayerSummary, PlayerProfile, H2HRecord,
     GameLogResponse, GameRow, TeamPickerRequest, TeamPickerResult, TeamPickerPlayer,
     MomResponse, MomEntry, BlockSummary, GameEntryRequest,
+    CreateDraftRequest, CreateDraftResponse,
 )
 from queries import (
     get_league_table, get_all_players, get_player_profile,
     get_games, get_mom_leaderboard, get_blocks, get_player_ratings, get_pair_synergy,
 )
 from team_picker import pick_teams
+from draft import create_draft, get_draft
 
 
 @asynccontextmanager
@@ -146,6 +149,97 @@ async def add_game(req: GameEntryRequest, db: AsyncSession = Depends(get_db)):
         ))
     await db.commit()
     return {"status": "ok", "players_added": len(req.players)}
+
+
+# --- Snake Draft ---
+
+@app.post("/api/draft", response_model=CreateDraftResponse)
+async def create_draft_session(req: CreateDraftRequest, db: AsyncSession = Depends(get_db)):
+    if len(req.player_ids) != 12:
+        raise HTTPException(status_code=400, detail="Exactly 12 player IDs required")
+
+    ratings = await get_player_ratings(db, req.player_ids)
+    synergy_raw = await get_pair_synergy(db, req.player_ids)
+
+    # Build pool with names
+    all_players = await get_all_players(db)
+    name_map = {p["id"]: p["name"] for p in all_players}
+    pool = [
+        {"id": pid, "name": name_map.get(pid, "Unknown"), "rating": round(ratings.get(pid, 0.5), 4)}
+        for pid in req.player_ids
+    ]
+
+    # Convert synergy keys to strings for JSON-safe storage
+    synergy = {f"{a},{b}": v for (a, b), v in synergy_raw.items()}
+
+    session = create_draft(req.captain_a, req.captain_b, pool, synergy)
+    return CreateDraftResponse(code=session.code, token_a=session.token_a, token_b=session.token_b)
+
+
+@app.get("/api/draft/{code}")
+async def get_draft_state(code: str, token: str = Query(...)):
+    session = get_draft(code)
+    if not session:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    captain = session.captain_for_token(token)
+    if captain is None:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    return session.to_state_dict(my_captain=captain)
+
+
+@app.websocket("/ws/draft/{code}")
+async def draft_websocket(ws: WebSocket, code: str, token: str = Query(...)):
+    session = get_draft(code)
+    if not session:
+        await ws.close(code=4004, reason="Draft not found")
+        return
+    captain = session.captain_for_token(token)
+    if captain is None:
+        await ws.close(code=4003, reason="Invalid token")
+        return
+
+    await ws.accept()
+    session.connections[token] = ws
+
+    # Send initial state
+    try:
+        await ws.send_json({"type": "state", "data": session.to_state_dict(my_captain=captain)})
+
+        while True:
+            msg = await ws.receive_json()
+            if msg.get("type") == "pick":
+                player_id = msg.get("player_id")
+                # Validate it's this captain's turn
+                if session.whose_turn != captain:
+                    await ws.send_json({"type": "error", "message": "Not your turn"})
+                    continue
+                # Validate player is available
+                if player_id in session.picked_ids():
+                    await ws.send_json({"type": "error", "message": "Player already picked"})
+                    continue
+                # Validate player is in pool
+                pool_ids = {p["id"] for p in session.pool}
+                if player_id not in pool_ids:
+                    await ws.send_json({"type": "error", "message": "Invalid player"})
+                    continue
+
+                # Record the pick
+                session.picks.append({"player_id": player_id, "captain": captain})
+
+                # Broadcast updated state to all connected captains
+                for t, conn in list(session.connections.items()):
+                    receiver_captain = session.captain_for_token(t)
+                    try:
+                        await conn.send_json({
+                            "type": "state",
+                            "data": session.to_state_dict(my_captain=receiver_captain),
+                        })
+                    except Exception:
+                        session.connections.pop(t, None)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        session.connections.pop(token, None)
 
 
 # Serve frontend static files in production

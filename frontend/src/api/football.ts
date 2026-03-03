@@ -103,6 +103,47 @@ export interface BlockSummary {
   quarter: number | null;
 }
 
+// --- Snake Draft ---
+export interface CreateDraftRequest {
+  captain_a: string;
+  captain_b: string;
+  player_ids: number[];
+}
+
+export interface CreateDraftResponse {
+  code: string;
+  token_a: string;
+  token_b: string;
+}
+
+export interface DraftPlayer {
+  id: number;
+  name: string;
+  rating: number;
+  synergy: number | null;
+}
+
+export interface DraftPick {
+  player_id: number;
+  captain: string;
+}
+
+export interface DraftState {
+  code: string;
+  captain_a: string;
+  captain_b: string;
+  whose_turn: string | null;
+  pick_number: number;
+  is_complete: boolean;
+  my_captain: string | null;
+  available: DraftPlayer[];
+  team_a: DraftPlayer[];
+  team_b: DraftPlayer[];
+  team_a_strength: number;
+  team_b_strength: number;
+  picks: DraftPick[];
+}
+
 // --- API Client ---
 
 const BASE = import.meta.env.VITE_API_URL
@@ -145,4 +186,8 @@ export const api = {
     }),
   getMom: () => fetchJson<MomResponse>(`${BASE}/mom`),
   getBlocks: () => fetchJson<BlockSummary[]>(`${BASE}/blocks`),
+  createDraft: (req: CreateDraftRequest) =>
+    postJson<CreateDraftResponse>(`${BASE}/draft`, req),
+  getDraftState: (code: string, token: string) =>
+    fetchJson<DraftState>(`${BASE}/draft/${code}?token=${token}`),
 };
