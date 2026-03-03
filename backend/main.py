@@ -207,6 +207,9 @@ async def draft_websocket(ws: WebSocket, code: str, token: str = Query(...)):
 
         while True:
             msg = await ws.receive_json()
+            if msg.get("type") == "ping":
+                await ws.send_json({"type": "pong"})
+                continue
             if msg.get("type") == "pick":
                 player_id = msg.get("player_id")
                 # Validate it's this captain's turn

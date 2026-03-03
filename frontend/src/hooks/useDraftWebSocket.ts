@@ -21,6 +21,7 @@ export function useDraftWebSocket(code: string | null, token: string | null) {
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const pingTimer = useRef<ReturnType<typeof setInterval>>();
 
   const connect = useCallback(() => {
     if (!code || !token) return;
@@ -31,7 +32,14 @@ export function useDraftWebSocket(code: string | null, token: string | null) {
     const ws = new WebSocket(buildWsUrl(code, token));
     wsRef.current = ws;
 
-    ws.onopen = () => setStatus("connected");
+    ws.onopen = () => {
+      setStatus("connected");
+      pingTimer.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "ping" }));
+        }
+      }, 20_000);
+    };
 
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
@@ -43,6 +51,7 @@ export function useDraftWebSocket(code: string | null, token: string | null) {
     };
 
     ws.onclose = (e) => {
+      clearInterval(pingTimer.current);
       wsRef.current = null;
       setStatus("disconnected");
       // Don't reconnect on auth rejection
@@ -63,6 +72,7 @@ export function useDraftWebSocket(code: string | null, token: string | null) {
     connect();
     return () => {
       clearTimeout(reconnectTimer.current);
+      clearInterval(pingTimer.current);
       wsRef.current?.close();
     };
   }, [connect]);
