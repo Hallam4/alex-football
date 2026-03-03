@@ -46,6 +46,7 @@ export default function TeamPicker() {
 
   // Log Game state
   const [showLogGame, setShowLogGame] = useState(false);
+  const [showLogGameDraft, setShowLogGameDraft] = useState(false);
   const [blockId, setBlockId] = useState<number | "">("");
   const [weekNumber, setWeekNumber] = useState<number | "">("");
   const [gameDate, setGameDate] = useState("");
@@ -159,6 +160,7 @@ export default function TeamPicker() {
     setCaptainBId(null);
     setDraftInfo(null);
     setShowLogGame(false);
+    setShowLogGameDraft(false);
     localStorage.removeItem("pickTeams.savedIds");
   };
 
@@ -170,6 +172,7 @@ export default function TeamPicker() {
     setCaptainBId(null);
     setDraftInfo(null);
     setShowLogGame(false);
+    setShowLogGameDraft(false);
     setNextGameDate(null);
     setDraftTeams(null);
     localStorage.removeItem("pickTeams.savedIds");
@@ -440,6 +443,34 @@ export default function TeamPicker() {
                   />
                 </div>
               )}
+
+              {draftTeams && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowLogGameDraft(!showLogGameDraft)}
+                    className="text-sm text-gray-400 hover:text-white flex items-center gap-1"
+                  >
+                    {showLogGameDraft ? "\u25BC" : "\u25B6"} Log Game
+                  </button>
+                  {showLogGameDraft && (
+                    <LogGameForm
+                      blocks={blocks ?? []}
+                      blockId={blockId}
+                      setBlockId={setBlockId}
+                      weekNumber={weekNumber}
+                      setWeekNumber={setWeekNumber}
+                      gameDate={gameDate}
+                      setGameDate={setGameDate}
+                      scoreA={scoreA}
+                      setScoreA={setScoreA}
+                      scoreB={scoreB}
+                      setScoreB={setScoreB}
+                      result={draftTeams}
+                      mutation={gameEntryMutation}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -564,7 +595,7 @@ function LogGameForm({
   setScoreA: (v: number | "") => void;
   scoreB: number | "";
   setScoreB: (v: number | "") => void;
-  result: TeamPickerResult;
+  result: { team_a: { id: number }[]; team_b: { id: number }[] };
   mutation: ReturnType<typeof useMutation<{ status: string; players_added: number }, Error, { block_id: number; week_number: number; game_date: string; players: GameEntryPlayer[] }>>;
 }) {
   const handleSaveGame = () => {
