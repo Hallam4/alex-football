@@ -110,6 +110,13 @@ export function LinkCard({
 
 // --- Draft Board ---
 
+export interface DraftTeams {
+  captain_a: string;
+  captain_b: string;
+  team_a: { id: number; name: string; rating: number }[];
+  team_b: { id: number; name: string; rating: number }[];
+}
+
 export function DraftBoard({
   code,
   token,
@@ -119,7 +126,7 @@ export function DraftBoard({
   code: string;
   token: string;
   onBack?: () => void;
-  onDone?: () => void;
+  onDone?: (teams: DraftTeams) => void;
 }) {
   const { state, status, error, pick } = useDraftWebSocket(code, token);
 
@@ -176,7 +183,14 @@ export function DraftBoard({
           <span className="font-bold text-sm text-green-300">Draft complete!</span>
           {onDone && (
             <button
-              onClick={onDone}
+              onClick={() =>
+                onDone({
+                  captain_a: state.captain_a,
+                  captain_b: state.captain_b,
+                  team_a: state.team_a.map((p) => ({ id: p.id, name: p.name, rating: p.rating })),
+                  team_b: state.team_b.map((p) => ({ id: p.id, name: p.name, rating: p.rating })),
+                })
+              }
               className="bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 px-5 rounded-lg text-sm transition-colors"
             >
               Done

@@ -6,7 +6,7 @@ import {
   GameEntryPlayer,
   CreateDraftResponse,
 } from "../api/football";
-import { DraftShareLinks, DraftBoard } from "./SnakeDraft";
+import { DraftShareLinks, DraftBoard, DraftTeams } from "./SnakeDraft";
 
 type Phase = "pick" | "saved" | "draftLinks" | "draftBoard";
 
@@ -51,7 +51,17 @@ export default function TeamPicker() {
   const [gameDate, setGameDate] = useState("");
   const [scoreA, setScoreA] = useState<number | "">("");
   const [scoreB, setScoreB] = useState<number | "">("");
-  const [nextGameDate, setNextGameDate] = useState<string | null>(null);
+  const [nextGameDate, setNextGameDate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("pickTeams.nextGameDate");
+    } catch { return null; }
+  });
+  const [draftTeams, setDraftTeams] = useState<DraftTeams | null>(() => {
+    try {
+      const stored = localStorage.getItem("pickTeams.draftTeams");
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
 
   // Restore selected set from localStorage-loaded savedIds
   useEffect(() => {
@@ -160,7 +170,11 @@ export default function TeamPicker() {
     setCaptainBId(null);
     setDraftInfo(null);
     setShowLogGame(false);
+    setNextGameDate(null);
+    setDraftTeams(null);
     localStorage.removeItem("pickTeams.savedIds");
+    localStorage.removeItem("pickTeams.nextGameDate");
+    localStorage.removeItem("pickTeams.draftTeams");
   };
 
   const handleDraftBack = () => {
@@ -169,7 +183,7 @@ export default function TeamPicker() {
     setDraftInfo(null);
   };
 
-  const handleDraftDone = () => {
+  const handleDraftDone = (teams: DraftTeams) => {
     // Compute next Wednesday
     const now = new Date();
     const day = now.getDay(); // 0=Sun, 3=Wed
@@ -179,7 +193,11 @@ export default function TeamPicker() {
     const yyyy = nextWed.getFullYear();
     const mm = String(nextWed.getMonth() + 1).padStart(2, "0");
     const dd = String(nextWed.getDate()).padStart(2, "0");
-    setNextGameDate(`${yyyy}-${mm}-${dd}`);
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    setNextGameDate(dateStr);
+    setDraftTeams(teams);
+    localStorage.setItem("pickTeams.nextGameDate", dateStr);
+    localStorage.setItem("pickTeams.draftTeams", JSON.stringify(teams));
     // Return to saved phase
     setLiveCode(null);
     setLiveToken(null);
@@ -384,16 +402,32 @@ export default function TeamPicker() {
         </div>
 
         {nextGameDate && (
-          <div className="bg-gray-800 rounded-xl p-4 mt-4 text-center">
-            <span className="text-sm text-gray-400">Next game: </span>
-            <span className="text-sm font-bold text-green-400">
-              {new Date(nextGameDate + "T00:00:00").toLocaleDateString("en-GB", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </span>
+          <div className="bg-gray-800 rounded-xl p-4 mt-4">
+            <div className="text-center mb-4">
+              <span className="text-sm text-gray-400">Next game: </span>
+              <span className="text-sm font-bold text-green-400">
+                {new Date(nextGameDate + "T00:00:00").toLocaleDateString("en-GB", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+            {draftTeams && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <TeamCard
+                  title={`${draftTeams.captain_a}'s Team`}
+                  players={draftTeams.team_a}
+                  color="green"
+                />
+                <TeamCard
+                  title={`${draftTeams.captain_b}'s Team`}
+                  players={draftTeams.team_b}
+                  color="blue"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -456,7 +490,7 @@ function TeamCard({
 }: {
   title: string;
   players: { id: number; name: string; rating: number }[];
-  strength: number;
+  strength?: number;
   color: "green" | "blue";
 }) {
   const accent = color === "green" ? "text-green-400" : "text-blue-400";
@@ -465,10 +499,12 @@ function TeamCard({
   return (
     <div className={`${bg} rounded-xl p-4`}>
       <h3 className={`font-bold ${accent} mb-3`}>
-        {title}{" "}
-        <span className="text-sm font-normal text-gray-400">
-          (strength: {strength.toFixed(3)})
-        </span>
+        {title}
+        {strength != null && (
+          <span className="text-sm font-normal text-gray-400">
+            {" "}(strength: {strength.toFixed(3)})
+          </span>
+        )}
       </h3>
       <div className="space-y-2">
         {players
