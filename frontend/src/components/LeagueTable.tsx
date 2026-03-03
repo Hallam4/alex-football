@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, LeagueRow } from "../api/football";
 
 type SortKey = keyof Pick<
@@ -12,12 +12,22 @@ export default function LeagueTable({
 }: {
   onPlayerClick: (id: number) => void;
 }) {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["league"],
     queryFn: api.getLeague,
   });
+  const { data: blocks } = useQuery({
+    queryKey: ["blocks"],
+    queryFn: api.getBlocks,
+  });
   const [sortKey, setSortKey] = useState<SortKey>("ppg");
   const [sortAsc, setSortAsc] = useState(false);
+
+  const recalcMutation = useMutation({
+    mutationFn: (blockId: number) => api.recalculateStandings(blockId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["league"] }),
+  });
 
   if (isLoading) return <p className="text-gray-400">Loading league table...</p>;
   if (error) return <p className="text-red-400">Error: {(error as Error).message}</p>;
@@ -50,7 +60,19 @@ export default function LeagueTable({
 
   return (
     <div>
-      <h2 className="text-lg font-bold text-green-400 mb-3">{data.block_name} — League Table</h2>
+      <div className="flex items-center gap-3 mb-3">
+        <h2 className="text-lg font-bold text-green-400">{data.block_name} — League Table</h2>
+        <button
+          onClick={() => {
+            const latestBlock = blocks?.[0];
+            if (latestBlock) recalcMutation.mutate(latestBlock.id);
+          }}
+          disabled={recalcMutation.isPending || !blocks?.length}
+          className="text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 px-2 py-1 rounded transition-colors"
+        >
+          {recalcMutation.isPending ? "Recalculating..." : "Recalculate"}
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

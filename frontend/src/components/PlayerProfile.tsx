@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/football";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell,
+  LineChart, Line,
+  ResponsiveContainer,
+} from "recharts";
 
 const FORM_COLORS: Record<string, string> = {
   W: "bg-green-600",
@@ -19,9 +25,32 @@ export default function PlayerProfile({
     queryFn: () => api.getPlayer(playerId),
   });
 
+  const { data: stats } = useQuery({
+    queryKey: ["playerStats", playerId],
+    queryFn: () => api.getPlayerStats(playerId),
+    enabled: !!data,
+  });
+
   if (isLoading) return <p className="text-gray-400">Loading player...</p>;
   if (error) return <p className="text-red-400">Error: {(error as Error).message}</p>;
   if (!data) return null;
+
+  // Compute rolling 6-game win rate from stats
+  const rollingData = stats?.games
+    ? stats.games.map((_, i, arr) => {
+        const window = arr.slice(Math.max(0, i - 5), i + 1);
+        const wins = window.filter((g) => g.result === "W").length;
+        return { game: i + 1, winRate: Math.round((wins / window.length) * 100) };
+      })
+    : [];
+
+  const pieData = data.total_games > 0
+    ? [
+        { name: "Wins", value: data.total_wins, color: "#22c55e" },
+        { name: "Draws", value: data.total_draws, color: "#eab308" },
+        { name: "Losses", value: data.total_losses, color: "#ef4444" },
+      ]
+    : [];
 
   return (
     <div>
@@ -79,6 +108,84 @@ export default function PlayerProfile({
                 {r}
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {stats && (stats.blocks.length > 0 || data.total_games > 0) && (
+        <div className="bg-gray-800 rounded-xl p-5 mb-4">
+          <h3 className="text-sm font-semibold text-gray-400 mb-4">Performance Charts</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {stats.blocks.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-2 text-center">Win Rate by Block</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.blocks}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="block_name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} domain={[0, 100]} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                      labelStyle={{ color: "#9ca3af" }}
+                    />
+                    <Bar dataKey="win_rate" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {pieData.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-2 text-center">W/D/L Distribution</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex justify-center gap-4 text-xs mt-1">
+                  {pieData.map((d) => (
+                    <span key={d.name} className="flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: d.color }} />
+                      {d.name} ({d.value})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {rollingData.length > 1 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-2 text-center">Rolling Form (6-game win %)</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={rollingData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="game" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} domain={[0, 100]} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151" }}
+                      labelStyle={{ color: "#9ca3af" }}
+                    />
+                    <Line type="monotone" dataKey="winRate" stroke="#22c55e" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         </div>
       )}

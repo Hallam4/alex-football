@@ -1,14 +1,44 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { api, TeamPickerResult } from "../api/football";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, TeamPickerResult, GameEntryPlayer } from "../api/football";
 
 export default function TeamPicker() {
+  const queryClient = useQueryClient();
   const { data: players, isLoading } = useQuery({
     queryKey: ["players"],
     queryFn: api.getPlayers,
   });
+  const { data: blocks } = useQuery({
+    queryKey: ["blocks"],
+    queryFn: api.getBlocks,
+  });
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<TeamPickerResult | null>(null);
+
+  // Log Game state
+  const [showLogGame, setShowLogGame] = useState(false);
+  const [blockId, setBlockId] = useState<number | "">("");
+  const [weekNumber, setWeekNumber] = useState<number | "">("");
+  const [gameDate, setGameDate] = useState("");
+  const [scoreA, setScoreA] = useState<number | "">("");
+  const [scoreB, setScoreB] = useState<number | "">("");
+
+  const recalcMutation = useMutation({
+    mutationFn: (bId: number) => api.recalculateStandings(bId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["league"] }),
+  });
+
+  const gameEntryMutation = useMutation({
+    mutationFn: (req: { block_id: number; week_number: number; game_date: string; players: GameEntryPlayer[] }) =>
+      api.addGame(req),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      queryClient.invalidateQueries({ queryKey: ["league"] });
+      if (typeof blockId === "number") {
+        recalcMutation.mutate(blockId);
+      }
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: (ids: number[]) => api.pickTeams(ids),
@@ -105,6 +135,140 @@ export default function TeamPicker() {
             Balance score: {result.balance_score.toFixed(4)} (lower = more
             balanced)
           </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-6">
+          <button
+            onClick={() => setShowLogGame(!showLogGame)}
+            className="text-sm text-gray-400 hover:text-white flex items-center gap-1"
+          >
+            {showLogGame ? "\u25BC" : "\u25B6"} Log Game
+          </button>
+
+          {showLogGame && (
+            <div className="bg-gray-800 rounded-xl p-5 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Block</label>
+                  <select
+                    value={blockId}
+                    onChange={(e) => setBlockId(e.target.value ? Number(e.target.value) : "")}
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                  >
+                    <option value="">Select block</option>
+                    {blocks?.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Week</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={weekNumber}
+                    onChange={(e) => setWeekNumber(e.target.value ? Number(e.target.value) : "")}
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                    placeholder="1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={gameDate}
+                    onChange={(e) => setGameDate(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-400 mb-1">A</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={scoreA}
+                      onChange={(e) => setScoreA(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                  <span className="text-gray-400 pb-1.5">-</span>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-400 mb-1">B</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={scoreB}
+                      onChange={(e) => setScoreB(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={
+                    blockId === "" ||
+                    weekNumber === "" ||
+                    !gameDate ||
+                    scoreA === "" ||
+                    scoreB === "" ||
+                    gameEntryMutation.isPending
+                  }
+                  onClick={() => {
+                    if (
+                      typeof blockId !== "number" ||
+                      typeof weekNumber !== "number" ||
+                      typeof scoreA !== "number" ||
+                      typeof scoreB !== "number"
+                    )
+                      return;
+
+                    const resultA = scoreA > scoreB ? "W" : scoreA < scoreB ? "L" : "D";
+                    const resultB = scoreB > scoreA ? "W" : scoreB < scoreA ? "L" : "D";
+
+                    const entryPlayers: GameEntryPlayer[] = [
+                      ...result.team_a.map((p) => ({
+                        player_id: p.id,
+                        result: resultA,
+                        goals_for: scoreA,
+                        goals_against: scoreB,
+                      })),
+                      ...result.team_b.map((p) => ({
+                        player_id: p.id,
+                        result: resultB,
+                        goals_for: scoreB,
+                        goals_against: scoreA,
+                      })),
+                    ];
+
+                    gameEntryMutation.mutate({
+                      block_id: blockId,
+                      week_number: weekNumber,
+                      game_date: gameDate,
+                      players: entryPlayers,
+                    });
+                  }}
+                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2 px-6 rounded-lg transition-colors text-sm"
+                >
+                  {gameEntryMutation.isPending ? "Saving..." : "Save Game"}
+                </button>
+                {gameEntryMutation.isSuccess && (
+                  <span className="text-green-400 text-sm">Game saved & standings recalculated</span>
+                )}
+                {gameEntryMutation.isError && (
+                  <span className="text-red-400 text-sm">
+                    Error: {(gameEntryMutation.error as Error).message}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -133,6 +133,27 @@ class GameEntryRequest(BaseModel):
     players: list[GameEntryPlayer]
 
 
+# --- Player Stats (Charts) ---
+class BlockStats(BaseModel):
+    block_id: int
+    block_name: str
+    played: int
+    won: int
+    drawn: int
+    lost: int
+    win_rate: float
+
+
+class GameResultEntry(BaseModel):
+    result: str
+    game_date: Optional[date]
+
+
+class PlayerStatsResponse(BaseModel):
+    blocks: list[BlockStats]
+    games: list[GameResultEntry]
+
+
 # --- Snake Draft ---
 class CreateDraftRequest(BaseModel):
     captain_a_id: int

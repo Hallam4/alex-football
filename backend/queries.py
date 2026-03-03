@@ -1,6 +1,6 @@
 """Reusable DB queries for Alex Football API."""
 
-from sqlalchemy import func, case, desc, and_, or_
+from sqlalchemy import func, case, desc, delete, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -321,3 +321,114 @@ async def get_pair_synergy(db: AsyncSession, player_ids: list[int]):
                 synergy[key] = 0.5  # neutral
 
     return synergy
+
+
+async def recalculate_standings(db: AsyncSession, block_id: int):
+    """Recalculate league standings for a block from game results + MoM awards."""
+    block = (await db.execute(select(Block).where(Block.id == block_id))).scalar_one_or_none()
+    if not block:
+        return None
+
+    # Aggregate game results per player for this block
+    game_stats = (await db.execute(
+        select(
+            GameResult.player_id,
+            func.count(GameResult.id).label("played"),
+            func.sum(case((GameResult.result == "W", 1), else_=0)).label("won"),
+            func.sum(case((GameResult.result == "D", 1), else_=0)).label("drawn"),
+            func.sum(case((GameResult.result == "L", 1), else_=0)).label("lost"),
+            func.coalesce(func.sum(GameResult.goals_for), 0).label("goals_for"),
+            func.coalesce(func.sum(GameResult.goals_against), 0).label("goals_against"),
+        )
+        .where(GameResult.block_id == block_id)
+        .group_by(GameResult.player_id)
+    )).all()
+
+    # Aggregate MoM awards per player for this block
+    mom_stats = (await db.execute(
+        select(
+            MomAward.player_id,
+            func.count(MomAward.id).label("award_count"),
+        )
+        .where(MomAward.block_id == block_id)
+        .group_by(MomAward.player_id)
+    )).all()
+    mom_map = {r.player_id: r.award_count for r in mom_stats}
+
+    # Delete existing standings for this block
+    await db.execute(delete(LeagueStanding).where(LeagueStanding.block_id == block_id))
+
+    # Insert new standings
+    for r in game_stats:
+        mom_count = mom_map.get(r.player_id, 0)
+        points = 3 * r.won + 1 * r.drawn + mom_count
+        ppg = round(points / r.played, 3) if r.played > 0 else 0.0
+        gd = r.goals_for - r.goals_against
+
+        db.add(LeagueStanding(
+            block_id=block_id,
+            player_id=r.player_id,
+            played=r.played,
+            won=r.won,
+            drawn=r.drawn,
+            lost=r.lost,
+            points=points,
+            goals_for=r.goals_for,
+            goals_against=r.goals_against,
+            goal_difference=gd,
+            mom_bonus=mom_count,
+            ppg=ppg,
+        ))
+
+    await db.commit()
+    return block.name
+
+
+async def get_player_stats(db: AsyncSession, player_id: int):
+    """Get per-block stats and game-by-game results for charts."""
+    player = (await db.execute(select(Player).where(Player.id == player_id))).scalar_one_or_none()
+    if not player:
+        return None
+
+    # Per-block breakdown
+    block_stats = (await db.execute(
+        select(
+            GameResult.block_id,
+            Block.name.label("block_name"),
+            func.count(GameResult.id).label("played"),
+            func.sum(case((GameResult.result == "W", 1), else_=0)).label("won"),
+            func.sum(case((GameResult.result == "D", 1), else_=0)).label("drawn"),
+            func.sum(case((GameResult.result == "L", 1), else_=0)).label("lost"),
+        )
+        .join(Block, GameResult.block_id == Block.id)
+        .where(GameResult.player_id == player_id)
+        .group_by(GameResult.block_id, Block.name)
+        .order_by(GameResult.block_id)
+    )).all()
+
+    blocks = []
+    for r in block_stats:
+        win_rate = round(r.won / r.played * 100, 1) if r.played > 0 else 0.0
+        blocks.append({
+            "block_id": r.block_id,
+            "block_name": r.block_name,
+            "played": r.played,
+            "won": r.won,
+            "drawn": r.drawn,
+            "lost": r.lost,
+            "win_rate": win_rate,
+        })
+
+    # Game-by-game results in chronological order
+    games = (await db.execute(
+        select(GameResult.result, GameResult.game_date)
+        .where(GameResult.player_id == player_id)
+        .order_by(GameResult.game_date, GameResult.id)
+    )).all()
+
+    game_list = [
+        {"result": g.result, "game_date": g.game_date}
+        for g in games
+    ]
+
+    return {"blocks": blocks, "games": game_list}

@@ -12,16 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect
 
 from database import engine, get_db
-from db_models import Base
+from sqlalchemy import select
+from db_models import Base, Player
 from models import (
     LeagueResponse, LeagueRow, PlayerSummary, PlayerProfile, H2HRecord,
     GameLogResponse, GameRow, TeamPickerRequest, TeamPickerResult, TeamPickerPlayer,
     MomResponse, MomEntry, BlockSummary, GameEntryRequest,
+    BlockStats, GameResultEntry, PlayerStatsResponse,
     CreateDraftRequest, CreateDraftResponse,
 )
 from queries import (
     get_league_table, get_all_players, get_player_profile,
     get_games, get_mom_leaderboard, get_blocks, get_player_ratings, get_pair_synergy,
+    recalculate_standings, get_player_stats,
 )
 from team_picker import pick_teams
 from draft import create_draft, get_draft
@@ -74,6 +77,17 @@ async def player_detail(player_id: int, db: AsyncSession = Depends(get_db)):
         **{k: v for k, v in data.items() if k != "head_to_head"},
         head_to_head=[H2HRecord(**h) for h in data["head_to_head"]],
     )
+
+
+@app.patch("/api/players/{player_id}")
+async def toggle_player_active(player_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Player).where(Player.id == player_id))
+    player = result.scalar_one_or_none()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    player.is_active = not player.is_active
+    await db.commit()
+    return {"id": player.id, "is_active": player.is_active}
 
 
 @app.get("/api/games", response_model=GameLogResponse)
@@ -149,6 +163,25 @@ async def add_game(req: GameEntryRequest, db: AsyncSession = Depends(get_db)):
         ))
     await db.commit()
     return {"status": "ok", "players_added": len(req.players)}
+
+
+@app.post("/api/blocks/{block_id}/recalculate")
+async def recalculate_block(block_id: int, db: AsyncSession = Depends(get_db)):
+    block_name = await recalculate_standings(db, block_id)
+    if block_name is None:
+        raise HTTPException(status_code=404, detail="Block not found")
+    return {"status": "ok", "block_name": block_name}
+
+
+@app.get("/api/players/{player_id}/stats", response_model=PlayerStatsResponse)
+async def player_stats(player_id: int, db: AsyncSession = Depends(get_db)):
+    data = await get_player_stats(db, player_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return PlayerStatsResponse(
+        blocks=[BlockStats(**b) for b in data["blocks"]],
+        games=[GameResultEntry(**g) for g in data["games"]],
+    )
 
 
 # --- Snake Draft ---

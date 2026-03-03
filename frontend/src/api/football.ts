@@ -103,6 +103,44 @@ export interface BlockSummary {
   quarter: number | null;
 }
 
+// --- Game Entry ---
+export interface GameEntryPlayer {
+  player_id: number;
+  result: string;
+  is_sub?: boolean;
+  replaced_player_id?: number | null;
+  goals_for?: number | null;
+  goals_against?: number | null;
+}
+
+export interface GameEntryRequest {
+  block_id: number;
+  week_number: number;
+  game_date: string;
+  players: GameEntryPlayer[];
+}
+
+// --- Player Stats (Charts) ---
+export interface BlockStats {
+  block_id: number;
+  block_name: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  win_rate: number;
+}
+
+export interface GameResultEntry {
+  result: string;
+  game_date: string | null;
+}
+
+export interface PlayerStatsResponse {
+  blocks: BlockStats[];
+  games: GameResultEntry[];
+}
+
 // --- Snake Draft ---
 export interface CreateDraftRequest {
   captain_a_id: number;
@@ -172,6 +210,15 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function patchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { method: "PATCH" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
 export const api = {
   getLeague: () => fetchJson<LeagueResponse>(`${BASE}/league`),
   getPlayers: () => fetchJson<PlayerSummary[]>(`${BASE}/players`),
@@ -190,4 +237,15 @@ export const api = {
     postJson<CreateDraftResponse>(`${BASE}/draft`, req),
   getDraftState: (code: string, token: string) =>
     fetchJson<DraftState>(`${BASE}/draft/${code}?token=${token}`),
+  toggleActive: (id: number) =>
+    patchJson<{ id: number; is_active: boolean }>(`${BASE}/players/${id}`),
+  addGame: (req: GameEntryRequest) =>
+    postJson<{ status: string; players_added: number }>(`${BASE}/games/add`, req),
+  recalculateStandings: (blockId: number) =>
+    postJson<{ status: string; block_name: string }>(
+      `${BASE}/blocks/${blockId}/recalculate`,
+      {}
+    ),
+  getPlayerStats: (id: number) =>
+    fetchJson<PlayerStatsResponse>(`${BASE}/players/${id}/stats`),
 };

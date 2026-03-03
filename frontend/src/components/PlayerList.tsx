@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/football";
 
 export default function PlayerList({
@@ -7,9 +7,14 @@ export default function PlayerList({
 }: {
   onPlayerClick: (id: number) => void;
 }) {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["players"],
     queryFn: api.getPlayers,
+  });
+  const toggleMutation = useMutation({
+    mutationFn: api.toggleActive,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["players"] }),
   });
   const [filter, setFilter] = useState("");
   const [showActive, setShowActive] = useState(true);
@@ -55,11 +60,29 @@ export default function PlayerList({
           >
             <div className="flex justify-between items-center">
               <span className="font-medium">{p.name}</span>
-              {p.is_active && (
-                <span className="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
-                  Active
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {p.is_active && (
+                  <span className="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
+                    Active
+                  </span>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMutation.mutate(p.id);
+                  }}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    p.is_active ? "bg-green-600" : "bg-gray-600"
+                  }`}
+                  aria-label={`Toggle ${p.name} active`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      p.is_active ? "translate-x-4.5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
             <div className="text-sm text-gray-400 mt-1">
               {p.total_games} games &middot; {p.total_wins} wins &middot;{" "}
