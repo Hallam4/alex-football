@@ -23,8 +23,17 @@ export default function TeamPicker() {
 
   // Phase 1: player selection
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  // Phase 2: saved pool
-  const [savedIds, setSavedIds] = useState<number[] | null>(null);
+  // Phase 2: saved pool (restored from localStorage)
+  const [savedIds, setSavedIds] = useState<number[] | null>(() => {
+    try {
+      const stored = localStorage.getItem("pickTeams.savedIds");
+      if (stored) {
+        const ids = JSON.parse(stored) as number[];
+        if (Array.isArray(ids) && ids.length > 0) return ids;
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
   // Auto Pick
   const [autoPickResult, setAutoPickResult] = useState<TeamPickerResult | null>(null);
   // Snake Draft
@@ -42,6 +51,11 @@ export default function TeamPicker() {
   const [gameDate, setGameDate] = useState("");
   const [scoreA, setScoreA] = useState<number | "">("");
   const [scoreB, setScoreB] = useState<number | "">("");
+
+  // Restore selected set from localStorage-loaded savedIds
+  useEffect(() => {
+    if (savedIds) setSelected(new Set(savedIds));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detect ?draft=...&token=... URL params on mount
   useEffect(() => {
@@ -117,7 +131,9 @@ export default function TeamPicker() {
 
   const handleSave = () => {
     if (selected.size === 12) {
-      setSavedIds(Array.from(selected));
+      const ids = Array.from(selected);
+      setSavedIds(ids);
+      localStorage.setItem("pickTeams.savedIds", JSON.stringify(ids));
       setAutoPickResult(null);
       setCaptainAId(null);
       setCaptainBId(null);
@@ -132,6 +148,18 @@ export default function TeamPicker() {
     setCaptainBId(null);
     setDraftInfo(null);
     setShowLogGame(false);
+    localStorage.removeItem("pickTeams.savedIds");
+  };
+
+  const handleClear = () => {
+    setSavedIds(null);
+    setSelected(new Set());
+    setAutoPickResult(null);
+    setCaptainAId(null);
+    setCaptainBId(null);
+    setDraftInfo(null);
+    setShowLogGame(false);
+    localStorage.removeItem("pickTeams.savedIds");
   };
 
   const handleDraftBack = () => {
@@ -182,6 +210,12 @@ export default function TeamPicker() {
               className="text-sm text-gray-400 hover:text-white transition-colors"
             >
               Edit Players
+            </button>
+            <button
+              onClick={handleClear}
+              className="text-sm text-red-400 hover:text-red-300 transition-colors"
+            >
+              Clear
             </button>
           </div>
           <div className="flex flex-wrap gap-2">

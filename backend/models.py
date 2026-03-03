@@ -176,6 +176,11 @@ class GameDeleteRequest(BaseModel):
     game_date: date
 
 
+# --- Bulk Active ---
+class SetActivePlayersRequest(BaseModel):
+    player_ids: list[int]
+
+
 # --- Admin ---
 class CreatePlayerRequest(BaseModel):
     name: str

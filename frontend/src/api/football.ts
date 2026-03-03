@@ -239,6 +239,19 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function putJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
 async function patchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { method: "PATCH" });
   if (!res.ok) {
@@ -281,6 +294,8 @@ export const api = {
     fetchJson<DraftState>(`${BASE}/draft/${code}?token=${token}`),
   toggleActive: (id: number) =>
     patchJson<{ id: number; is_active: boolean }>(`${BASE}/players/${id}`),
+  setActivePlayers: (ids: number[]) =>
+    putJson<{ updated: number }>(`${BASE}/players/active`, { player_ids: ids }),
   addGame: (req: GameEntryRequest) =>
     postJson<{ status: string; players_added: number }>(`${BASE}/games/add`, req),
   recalculateStandings: (blockId: number) =>

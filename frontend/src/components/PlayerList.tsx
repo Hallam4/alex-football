@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/football";
 
@@ -12,10 +12,23 @@ export default function PlayerList({
     queryKey: ["players"],
     queryFn: api.getPlayers,
   });
-  const toggleMutation = useMutation({
-    mutationFn: api.toggleActive,
+  const [pendingActive, setPendingActive] = useState<Set<number>>(new Set());
+  const serverActiveRef = useRef<Set<number>>(new Set());
+
+  // Sync pendingActive from server data on load / after save
+  useEffect(() => {
+    if (data) {
+      const serverSet = new Set(data.filter((p) => p.is_active).map((p) => p.id));
+      serverActiveRef.current = serverSet;
+      setPendingActive(new Set(serverSet));
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: api.setActivePlayers,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["players"] }),
   });
+
   const [filter, setFilter] = useState("");
   const [showActive, setShowActive] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -39,6 +52,19 @@ export default function PlayerList({
       p.name.toLowerCase().includes(filter.toLowerCase()) &&
       (!showActive || p.is_active)
   );
+
+  // Check if pendingActive differs from server state
+  const serverActive = serverActiveRef.current;
+  const isDirty =
+    pendingActive.size !== serverActive.size ||
+    [...pendingActive].some((id) => !serverActive.has(id));
+
+  const togglePending = (id: number) => {
+    const next = new Set(pendingActive);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPendingActive(next);
+  };
 
   return (
     <div>
@@ -66,6 +92,17 @@ export default function PlayerList({
         >
           + Add Player
         </button>
+        {isDirty && (
+          <button
+            onClick={() => saveMutation.mutate([...pendingActive])}
+            disabled={saveMutation.isPending}
+            className="text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1.5 rounded transition-colors"
+          >
+            {saveMutation.isPending
+              ? "Saving..."
+              : `Save (${pendingActive.size} active)`}
+          </button>
+        )}
       </div>
 
       {showAddForm && (
@@ -108,27 +145,18 @@ export default function PlayerList({
             <div className="flex justify-between items-center">
               <span className="font-medium">{p.name}</span>
               <div className="flex items-center gap-2">
-                {p.is_active && (
+                {pendingActive.has(p.id) && (
                   <span className="text-xs bg-green-900 text-green-300 px-2 py-0.5 rounded-full">
                     Active
                   </span>
                 )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleMutation.mutate(p.id);
-                  }}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    p.is_active ? "bg-green-600" : "bg-gray-600"
-                  }`}
-                  aria-label={`Toggle ${p.name} active`}
-                >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                      p.is_active ? "translate-x-4.5" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
+                <input
+                  type="checkbox"
+                  checked={pendingActive.has(p.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => togglePending(p.id)}
+                  className="accent-green-500 h-4 w-4 cursor-pointer"
+                />
               </div>
             </div>
             <div className="text-sm text-gray-400 mt-1">

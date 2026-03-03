@@ -21,6 +21,7 @@ from models import (
     BlockStats, GameResultEntry, PlayerStatsResponse,
     CreateDraftRequest, CreateDraftResponse,
     GameDeleteRequest, CreatePlayerRequest, CreateBlockRequest, AwardMomRequest,
+    SetActivePlayersRequest,
 )
 from queries import (
     get_league_table, get_all_players, get_player_profile,
@@ -90,6 +91,21 @@ async def toggle_player_active(player_id: int, db: AsyncSession = Depends(get_db
     player.is_active = not player.is_active
     await db.commit()
     return {"id": player.id, "is_active": player.is_active}
+
+
+@app.put("/api/players/active")
+async def set_active_players(req: SetActivePlayersRequest, db: AsyncSession = Depends(get_db)):
+    active_set = set(req.player_ids)
+    result = await db.execute(select(Player))
+    players = result.scalars().all()
+    updated = 0
+    for player in players:
+        new_val = player.id in active_set
+        if player.is_active != new_val:
+            player.is_active = new_val
+            updated += 1
+    await db.commit()
+    return {"updated": updated}
 
 
 @app.get("/api/games", response_model=GameLogResponse)
