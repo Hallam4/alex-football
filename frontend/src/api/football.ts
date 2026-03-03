@@ -12,6 +12,11 @@ export interface LeagueRow {
   points: number;
   goal_difference: number;
   ppg: number;
+  recent_form: string[];
+  streak: string;
+  goals_for_total: number;
+  goals_against_total: number;
+  avg_goals_for: number;
 }
 
 export interface LeagueResponse {
@@ -183,6 +188,45 @@ export interface AwardMomRequest {
   votes?: number;
 }
 
+// --- Achievements ---
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  unlocked_date: string | null;
+}
+
+export interface PlayerAchievements {
+  player_id: number;
+  achievements: Achievement[];
+}
+
+// --- Matchup Prediction ---
+export interface PredictionRequest {
+  team_a_ids: number[];
+  team_b_ids: number[];
+}
+
+export interface PredictionResult {
+  team_a_win_pct: number;
+  team_b_win_pct: number;
+  draw_pct: number;
+  team_a_strength: number;
+  team_b_strength: number;
+  team_a_form: number;
+  team_b_form: number;
+  team_a_synergy: number;
+  team_b_synergy: number;
+}
+
+// --- Game Edit ---
+export interface GameEditRequest {
+  block_id: number;
+  week_number: number;
+  game_date: string;
+  updates: GameEntryPlayer[];
+}
+
 export interface DraftPlayer {
   id: number;
   name: string;
@@ -313,4 +357,10 @@ export const api = {
     postJson<{ id: number; name: string; start_date: string | null; quarter: number | null }>(`${BASE}/blocks`, req),
   awardMom: (req: AwardMomRequest) =>
     postJson<{ status: string }>(`${BASE}/mom`, req),
+  getAchievements: (id: number) =>
+    fetchJson<PlayerAchievements>(`${BASE}/players/${id}/achievements`),
+  predict: (req: PredictionRequest) =>
+    postJson<PredictionResult>(`${BASE}/predict`, req),
+  editGame: (req: GameEditRequest) =>
+    putJson<{ status: string; replaced: number; new_count: number }>(`${BASE}/games`, req),
 };

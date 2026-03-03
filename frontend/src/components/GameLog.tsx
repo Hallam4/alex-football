@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Clock, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
-import { api } from "../api/football";
+import { Clock, Trash2, ChevronLeft, ChevronRight, Pencil, Check, X } from "lucide-react";
+import { api, GameEntryPlayer } from "../api/football";
 
 const RESULT_COLORS: Record<string, string> = {
   W: "text-green-400",
@@ -14,12 +14,26 @@ export default function GameLog() {
   const [blockId, setBlockId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
 
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editScoreA, setEditScoreA] = useState<number | "">("");
+  const [editScoreB, setEditScoreB] = useState<number | "">("");
+
   const deleteMutation = useMutation({
     mutationFn: api.deleteGame,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["games"] });
       queryClient.invalidateQueries({ queryKey: ["league"] });
       queryClient.invalidateQueries({ queryKey: ["players"] });
+    },
+  });
+
+  const editMutation = useMutation({
+    mutationFn: api.editGame,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      queryClient.invalidateQueries({ queryKey: ["league"] });
+      queryClient.invalidateQueries({ queryKey: ["players"] });
+      setEditingKey(null);
     },
   });
 
@@ -90,26 +104,130 @@ export default function GameLog() {
         <>
           {Object.entries(grouped).map(([key, games]) => {
             const first = games[0];
+            const isEditing = editingKey === key;
             return (
             <div key={key} className="glass-card p-4 mb-4">
               <div className="flex items-center gap-2 mb-3">
                 <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500">{key}</h3>
-                <button
-                  onClick={() => {
-                    if (!confirm(`Delete all ${games.length} results for this game?`)) return;
-                    deleteMutation.mutate({
-                      block_id: first.block_id,
-                      week_number: first.week_number,
-                      game_date: first.game_date ?? "",
-                    });
-                  }}
-                  disabled={deleteMutation.isPending}
-                  className="ml-auto flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors disabled:opacity-50"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  Delete
-                </button>
+                <div className="ml-auto flex items-center gap-2">
+                  {!isEditing && (
+                    <button
+                      onClick={() => {
+                        setEditingKey(key);
+                        setEditScoreA(first.goals_for ?? "");
+                        setEditScoreB(first.goals_against ?? "");
+                      }}
+                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-green-400 transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (!confirm(`Delete all ${games.length} results for this game?`)) return;
+                      deleteMutation.mutate({
+                        block_id: first.block_id,
+                        week_number: first.week_number,
+                        game_date: first.game_date ?? "",
+                      });
+                    }}
+                    disabled={deleteMutation.isPending}
+                    className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                  </button>
+                </div>
               </div>
+
+              {isEditing && (
+                <div className="flex items-center gap-2 mb-3 p-3 bg-white/[0.03] rounded-xl">
+                  <span className="text-xs text-gray-500">Score:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editScoreA}
+                    onChange={(e) => setEditScoreA(e.target.value ? Number(e.target.value) : "")}
+                    className="input-glass !w-16 text-center"
+                  />
+                  <span className="text-gray-600">-</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editScoreB}
+                    onChange={(e) => setEditScoreB(e.target.value ? Number(e.target.value) : "")}
+                    className="input-glass !w-16 text-center"
+                  />
+                  <button
+                    disabled={editScoreA === "" || editScoreB === "" || editMutation.isPending}
+                    onClick={() => {
+                      if (typeof editScoreA !== "number" || typeof editScoreB !== "number") return;
+                      // Determine teams by current goals_for/goals_against
+                      const gf = first.goals_for;
+                      const ga = first.goals_against;
+                      const teamA = games.filter((g) => g.goals_for === gf && g.goals_against === ga);
+                      const teamB = games.filter((g) => !(g.goals_for === gf && g.goals_against === ga));
+
+                      const resultA = editScoreA > editScoreB ? "W" : editScoreA < editScoreB ? "L" : "D";
+                      const resultB = editScoreB > editScoreA ? "W" : editScoreB < editScoreA ? "L" : "D";
+
+                      let updates: GameEntryPlayer[];
+                      if (teamB.length === 0) {
+                        // All same score (draw) — update everyone uniformly
+                        updates = games.map((g) => ({
+                          player_id: g.player_id,
+                          result: editScoreA === editScoreB ? "D" : resultA,
+                          is_sub: g.is_sub,
+                          goals_for: editScoreA,
+                          goals_against: editScoreB,
+                        }));
+                      } else {
+                        updates = [
+                          ...teamA.map((g) => ({
+                            player_id: g.player_id,
+                            result: resultA,
+                            is_sub: g.is_sub,
+                            goals_for: editScoreA,
+                            goals_against: editScoreB,
+                          })),
+                          ...teamB.map((g) => ({
+                            player_id: g.player_id,
+                            result: resultB,
+                            is_sub: g.is_sub,
+                            goals_for: editScoreB,
+                            goals_against: editScoreA,
+                          })),
+                        ];
+                      }
+
+                      editMutation.mutate({
+                        block_id: first.block_id,
+                        week_number: first.week_number,
+                        game_date: first.game_date ?? "",
+                        updates,
+                      });
+                    }}
+                    className="btn-primary !px-3 !py-1.5 !text-xs flex items-center gap-1"
+                  >
+                    <Check className="w-3 h-3" />
+                    {editMutation.isPending ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setEditingKey(null)}
+                    className="btn-secondary !px-3 !py-1.5 !text-xs flex items-center gap-1"
+                  >
+                    <X className="w-3 h-3" />
+                    Cancel
+                  </button>
+                  {editMutation.isError && (
+                    <span className="text-red-400 text-xs">
+                      {(editMutation.error as Error).message}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
                 {games.map((g, i) => (
                   <div

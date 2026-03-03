@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Swords, Zap, Shuffle, Save, Pencil, X } from "lucide-react";
+import { Swords, Zap, Shuffle, Save, Pencil, X, Share2, Check } from "lucide-react";
 import {
   api,
   TeamPickerResult,
@@ -81,6 +81,23 @@ export default function TeamPicker() {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
+
+  // Auto-fill latest block and next Wednesday date
+  useEffect(() => {
+    if (blocks && blocks.length > 0 && blockId === "") {
+      setBlockId(blocks[0].id);
+    }
+    if (!gameDate) {
+      const now = new Date();
+      const day = now.getDay();
+      const daysUntilWed = (3 - day + 7) % 7 || 7;
+      const nextWed = new Date(now);
+      nextWed.setDate(now.getDate() + daysUntilWed);
+      setGameDate(
+        `${nextWed.getFullYear()}-${String(nextWed.getMonth() + 1).padStart(2, "0")}-${String(nextWed.getDate()).padStart(2, "0")}`
+      );
+    }
+  }, [blocks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recalcMutation = useMutation({
     mutationFn: (bId: number) => api.recalculateStandings(bId),
@@ -328,6 +345,22 @@ export default function TeamPicker() {
               </div>
             </div>
 
+            <PredictionBar
+              teamAIds={autoPickResult.team_a.map((p) => p.id)}
+              teamBIds={autoPickResult.team_b.map((p) => p.id)}
+            />
+
+            <div className="flex justify-center mt-3">
+              <ShareButton
+                teamA={autoPickResult.team_a}
+                teamB={autoPickResult.team_b}
+                titleA="Team A"
+                titleB="Team B"
+                strengthA={autoPickResult.team_a_strength}
+                strengthB={autoPickResult.team_b_strength}
+              />
+            </div>
+
             {/* Log Game */}
             <div className="mt-6">
               <button
@@ -444,18 +477,36 @@ export default function TeamPicker() {
                 </button>
               </div>
               {draftTeams && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <TeamCard
-                    title={`${draftTeams.captain_a}'s Team`}
-                    players={draftTeams.team_a}
-                    color="green"
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <TeamCard
+                      title={`${draftTeams.captain_a}'s Team`}
+                      players={draftTeams.team_a}
+                      color="green"
+                    />
+                    <TeamCard
+                      title={`${draftTeams.captain_b}'s Team`}
+                      players={draftTeams.team_b}
+                      color="blue"
+                    />
+                  </div>
+
+                  <PredictionBar
+                    teamAIds={draftTeams.team_a.map((p: { id: number }) => p.id)}
+                    teamBIds={draftTeams.team_b.map((p: { id: number }) => p.id)}
+                    labelA={draftTeams.captain_a}
+                    labelB={draftTeams.captain_b}
                   />
-                  <TeamCard
-                    title={`${draftTeams.captain_b}'s Team`}
-                    players={draftTeams.team_b}
-                    color="blue"
-                  />
-                </div>
+
+                  <div className="flex justify-center mt-3">
+                    <ShareButton
+                      teamA={draftTeams.team_a}
+                      teamB={draftTeams.team_b}
+                      titleA={`${draftTeams.captain_a}'s Team`}
+                      titleB={`${draftTeams.captain_b}'s Team`}
+                    />
+                  </div>
+                </>
               )}
 
               {draftTeams && (
@@ -758,5 +809,96 @@ function LogGameForm({
         )}
       </div>
     </div>
+  );
+}
+
+function PredictionBar({
+  teamAIds,
+  teamBIds,
+  labelA = "Team A",
+  labelB = "Team B",
+}: {
+  teamAIds: number[];
+  teamBIds: number[];
+  labelA?: string;
+  labelB?: string;
+}) {
+  const { data } = useQuery({
+    queryKey: ["predict", teamAIds.join(","), teamBIds.join(",")],
+    queryFn: () => api.predict({ team_a_ids: teamAIds, team_b_ids: teamBIds }),
+  });
+
+  if (!data) return null;
+
+  return (
+    <div className="glass-card p-4 mt-4">
+      <p className="text-xs text-gray-500 mb-2 text-center">Match Prediction</p>
+      <div className="flex rounded-xl overflow-hidden h-8 text-xs font-bold">
+        <div
+          className="bg-green-500/30 flex items-center justify-center text-green-400 transition-all"
+          style={{ width: `${data.team_a_win_pct}%` }}
+        >
+          {data.team_a_win_pct >= 15 && `${labelA} ${data.team_a_win_pct.toFixed(0)}%`}
+        </div>
+        <div
+          className="bg-yellow-500/20 flex items-center justify-center text-yellow-400 transition-all"
+          style={{ width: `${data.draw_pct}%` }}
+        >
+          {data.draw_pct >= 15 && `${data.draw_pct.toFixed(0)}%`}
+        </div>
+        <div
+          className="bg-blue-500/30 flex items-center justify-center text-blue-400 transition-all"
+          style={{ width: `${data.team_b_win_pct}%` }}
+        >
+          {data.team_b_win_pct >= 15 && `${labelB} ${data.team_b_win_pct.toFixed(0)}%`}
+        </div>
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+        <span>{labelA}</span>
+        <span>Draw</span>
+        <span>{labelB}</span>
+      </div>
+    </div>
+  );
+}
+
+function ShareButton({
+  teamA,
+  teamB,
+  titleA = "Team A",
+  titleB = "Team B",
+  strengthA,
+  strengthB,
+}: {
+  teamA: { name: string }[];
+  teamB: { name: string }[];
+  titleA?: string;
+  titleB?: string;
+  strengthA?: number;
+  strengthB?: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = () => {
+    const lines = [
+      `${titleA}${strengthA != null ? ` (${strengthA.toFixed(3)})` : ""}`,
+      ...teamA.map((p) => p.name).sort(),
+      "",
+      `${titleB}${strengthB != null ? ` (${strengthB.toFixed(3)})` : ""}`,
+      ...teamB.map((p) => p.name).sort(),
+    ];
+    navigator.clipboard.writeText(lines.join("\n"));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleShare}
+      className="btn-secondary flex items-center gap-1.5 !px-3 !py-1.5 !text-xs"
+    >
+      {copied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+      {copied ? "Copied!" : "Share Teams"}
+    </button>
   );
 }

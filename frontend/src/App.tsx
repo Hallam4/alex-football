@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Trophy, Users, Swords, Clock, Star } from "lucide-react";
 import LeagueTable from "./components/LeagueTable";
 import PlayerList from "./components/PlayerList";
@@ -17,17 +17,64 @@ const TABS: { id: Tab; label: string; icon: typeof Trophy }[] = [
   { id: "mom", label: "MoM", icon: Star },
 ];
 
+const VALID_TABS = new Set<string>(TABS.map((t) => t.id));
+
+function parseHash(): { tab: Tab; playerId: number | null } {
+  const hash = window.location.hash.slice(1); // remove #
+  if (!hash) return { tab: "league", playerId: null };
+
+  // #players/123
+  const playerMatch = hash.match(/^players\/(\d+)$/);
+  if (playerMatch) return { tab: "players", playerId: Number(playerMatch[1]) };
+
+  if (VALID_TABS.has(hash)) return { tab: hash as Tab, playerId: null };
+  return { tab: "league", playerId: null };
+}
+
+function setHash(tab: Tab, playerId: number | null) {
+  const hash = playerId ? `players/${playerId}` : tab === "league" ? "" : tab;
+  const newUrl = hash ? `#${hash}` : window.location.pathname + window.location.search;
+  window.history.pushState(null, "", newUrl);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
+    // Draft URL params take priority
     const params = new URLSearchParams(window.location.search);
     if (params.get("draft") && params.get("token")) return "picker";
-    return "league";
+    return parseHash().tab;
   });
-  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(
+    () => parseHash().playerId
+  );
+
+  // Sync hash → state on popstate (back/forward)
+  const onPopState = useCallback(() => {
+    const { tab, playerId } = parseHash();
+    setActiveTab(tab);
+    setSelectedPlayerId(playerId);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [onPopState]);
+
+  const navigateTab = (tab: Tab) => {
+    setActiveTab(tab);
+    if (tab !== "players") setSelectedPlayerId(null);
+    setHash(tab, null);
+  };
 
   const handlePlayerClick = (playerId: number) => {
     setSelectedPlayerId(playerId);
     setActiveTab("players");
+    setHash("players", playerId);
+  };
+
+  const handlePlayerBack = () => {
+    setSelectedPlayerId(null);
+    setHash("players", null);
   };
 
   return (
@@ -54,10 +101,7 @@ export default function App() {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  if (tab.id !== "players") setSelectedPlayerId(null);
-                }}
+                onClick={() => navigateTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap rounded-xl transition-all ${
                   isActive
                     ? "bg-green-500/10 text-green-400 shadow-glow-sm"
@@ -77,12 +121,12 @@ export default function App() {
           <LeagueTable onPlayerClick={handlePlayerClick} />
         )}
         {activeTab === "players" && !selectedPlayerId && (
-          <PlayerList onPlayerClick={setSelectedPlayerId} />
+          <PlayerList onPlayerClick={handlePlayerClick} />
         )}
         {activeTab === "players" && selectedPlayerId && (
           <PlayerProfile
             playerId={selectedPlayerId}
-            onBack={() => setSelectedPlayerId(null)}
+            onBack={handlePlayerBack}
           />
         )}
         {activeTab === "picker" && <TeamPicker />}

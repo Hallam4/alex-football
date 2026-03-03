@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trophy, RefreshCw, PlusCircle } from "lucide-react";
+import { Trophy, RefreshCw, PlusCircle, Flame, TrendingDown } from "lucide-react";
 import { api, LeagueRow } from "../api/football";
 
 type SortKey = keyof Pick<
   LeagueRow,
-  "position" | "played" | "won" | "drawn" | "lost" | "mom" | "points" | "goal_difference" | "ppg"
+  "position" | "played" | "won" | "drawn" | "lost" | "goals_for_total" | "goals_against_total" | "mom" | "points" | "goal_difference" | "ppg"
 >;
 
 const POSITION_BADGES: Record<number, string> = {
   1: "bg-yellow-500 text-yellow-950",
   2: "bg-gray-300 text-gray-800",
   3: "bg-amber-700 text-amber-100",
+};
+
+const FORM_DOT: Record<string, string> = {
+  W: "bg-green-500",
+  D: "bg-yellow-500",
+  L: "bg-red-500",
 };
 
 export default function LeagueTable({
@@ -52,6 +58,14 @@ export default function LeagueTable({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["league"] }),
   });
 
+  const sorted = useMemo(() => {
+    if (!data) return [];
+    return [...data.standings].sort((a, b) => {
+      const diff = (a[sortKey] as number) - (b[sortKey] as number);
+      return sortAsc ? diff : -diff;
+    });
+  }, [data, sortKey, sortAsc]);
+
   if (isLoading) {
     return (
       <div className="glass-card p-5 animate-slide-up space-y-3">
@@ -73,17 +87,14 @@ export default function LeagueTable({
     }
   };
 
-  const sorted = [...data.standings].sort((a, b) => {
-    const diff = (a[sortKey] as number) - (b[sortKey] as number);
-    return sortAsc ? diff : -diff;
-  });
-
   const cols: { key: SortKey; label: string; cls?: string }[] = [
     { key: "position", label: "#", cls: "w-8" },
     { key: "played", label: "P" },
     { key: "won", label: "W" },
     { key: "drawn", label: "D" },
     { key: "lost", label: "L" },
+    { key: "goals_for_total", label: "GF" },
+    { key: "goals_against_total", label: "GA" },
     { key: "mom", label: "MoM" },
     { key: "points", label: "Pts" },
     { key: "goal_difference", label: "GD" },
@@ -189,6 +200,7 @@ export default function LeagueTable({
                 </th>
               ))}
               <th className="px-2 py-2.5 text-left">Player</th>
+              <th className="px-2 py-2.5 text-center">Form</th>
               {cols.slice(1).map((c) => (
                 <th
                   key={c.key}
@@ -226,12 +238,39 @@ export default function LeagueTable({
                   className="px-2 py-2.5 font-medium cursor-pointer hover:text-green-400 transition-colors"
                   onClick={() => onPlayerClick(row.player_id)}
                 >
-                  {row.player_name}
+                  <div className="flex items-center gap-1.5">
+                    {row.player_name}
+                    {row.streak.startsWith("W") && (
+                      <span className="flex items-center gap-0.5 text-[10px] font-bold text-orange-400" title={`${row.streak.slice(1)}-game win streak`}>
+                        <Flame className="w-3 h-3" />
+                        {row.streak.slice(1)}
+                      </span>
+                    )}
+                    {row.streak.startsWith("L") && (
+                      <span className="flex items-center gap-0.5 text-[10px] font-bold text-red-400/70" title={`${row.streak.slice(1)}-game losing streak`}>
+                        <TrendingDown className="w-3 h-3" />
+                        {row.streak.slice(1)}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-2 py-2.5">
+                  <div className="flex gap-0.5 justify-center">
+                    {row.recent_form.map((r, j) => (
+                      <span
+                        key={j}
+                        className={`w-2 h-2 rounded-full ${FORM_DOT[r] ?? "bg-gray-600"}`}
+                        title={r}
+                      />
+                    ))}
+                  </div>
                 </td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.played}</td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.won}</td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.drawn}</td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.lost}</td>
+                <td className="px-2 py-2.5 text-right text-gray-400">{row.goals_for_total}</td>
+                <td className="px-2 py-2.5 text-right text-gray-400">{row.goals_against_total}</td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.mom}</td>
                 <td className="px-2 py-2.5 text-right font-bold text-green-400">{row.points}</td>
                 <td className="px-2 py-2.5 text-right text-gray-400">{row.goal_difference}</td>

@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
-import { api } from "../api/football";
+import { ArrowLeft, Award, Flame, Target, Shield, Users, Star, Crown, Zap, Trophy as TrophyIcon } from "lucide-react";
+import { api, Achievement } from "../api/football";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   PieChart, Pie, Cell,
@@ -39,6 +40,12 @@ export default function PlayerProfile({
     enabled: !!data,
   });
 
+  const { data: achievementsData } = useQuery({
+    queryKey: ["achievements", playerId],
+    queryFn: () => api.getAchievements(playerId),
+    enabled: !!data,
+  });
+
   if (isLoading) {
     return (
       <div className="animate-slide-up space-y-4">
@@ -56,21 +63,27 @@ export default function PlayerProfile({
   if (!data) return null;
 
   // Compute rolling 6-game win rate from stats
-  const rollingData = stats?.games
-    ? stats.games.map((_, i, arr) => {
-        const window = arr.slice(Math.max(0, i - 5), i + 1);
-        const wins = window.filter((g) => g.result === "W").length;
-        return { game: i + 1, winRate: Math.round((wins / window.length) * 100) };
-      })
-    : [];
+  const rollingData = useMemo(() =>
+    stats?.games
+      ? stats.games.map((_, i, arr) => {
+          const window = arr.slice(Math.max(0, i - 5), i + 1);
+          const wins = window.filter((g) => g.result === "W").length;
+          return { game: i + 1, winRate: Math.round((wins / window.length) * 100) };
+        })
+      : [],
+    [stats]
+  );
 
-  const pieData = data.total_games > 0
-    ? [
-        { name: "Wins", value: data.total_wins, color: "#22c55e" },
-        { name: "Draws", value: data.total_draws, color: "#eab308" },
-        { name: "Losses", value: data.total_losses, color: "#ef4444" },
-      ]
-    : [];
+  const pieData = useMemo(() =>
+    data.total_games > 0
+      ? [
+          { name: "Wins", value: data.total_wins, color: "#22c55e" },
+          { name: "Draws", value: data.total_draws, color: "#eab308" },
+          { name: "Losses", value: data.total_losses, color: "#ef4444" },
+        ]
+      : [],
+    [data]
+  );
 
   return (
     <div className="animate-slide-up">
@@ -124,6 +137,19 @@ export default function PlayerProfile({
           </div>
         </div>
       </div>
+
+      {achievementsData && achievementsData.achievements.length > 0 && (
+        <div className="glass-card p-5 mb-4">
+          <h3 className="text-xs uppercase tracking-wider font-semibold text-gray-500 mb-3">
+            Achievements
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {achievementsData.achievements.map((a) => (
+              <AchievementBadge key={a.id} achievement={a} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {data.recent_form.length > 0 && (
         <div className="glass-card p-5 mb-4">
@@ -261,6 +287,49 @@ export default function PlayerProfile({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const ACHIEVEMENT_ICONS: Record<string, typeof Award> = {
+  century: TrophyIcon,
+  half_century: TrophyIcon,
+  win_machine: Target,
+  sharp_shooter: Target,
+  hot_streak: Flame,
+  comeback_kid: Zap,
+  veteran: Shield,
+  perfect_block: Crown,
+  synergy_master: Users,
+  fan_favorite: Star,
+  og: Award,
+};
+
+const ACHIEVEMENT_COLORS: Record<string, string> = {
+  century: "from-yellow-500/20 to-yellow-600/5 border-yellow-500/20 text-yellow-400",
+  half_century: "from-gray-400/15 to-gray-500/5 border-gray-400/20 text-gray-300",
+  win_machine: "from-green-500/20 to-green-600/5 border-green-500/20 text-green-400",
+  sharp_shooter: "from-green-500/20 to-green-600/5 border-green-500/20 text-green-400",
+  hot_streak: "from-orange-500/20 to-orange-600/5 border-orange-500/20 text-orange-400",
+  comeback_kid: "from-purple-500/20 to-purple-600/5 border-purple-500/20 text-purple-400",
+  veteran: "from-blue-500/20 to-blue-600/5 border-blue-500/20 text-blue-400",
+  perfect_block: "from-yellow-500/20 to-yellow-600/5 border-yellow-500/20 text-yellow-400",
+  synergy_master: "from-cyan-500/20 to-cyan-600/5 border-cyan-500/20 text-cyan-400",
+  fan_favorite: "from-yellow-500/20 to-yellow-600/5 border-yellow-500/20 text-yellow-400",
+  og: "from-emerald-500/20 to-emerald-600/5 border-emerald-500/20 text-emerald-400",
+};
+
+function AchievementBadge({ achievement }: { achievement: Achievement }) {
+  const Icon = ACHIEVEMENT_ICONS[achievement.id] ?? Award;
+  const color = ACHIEVEMENT_COLORS[achievement.id] ?? "from-gray-500/20 to-gray-600/5 border-gray-500/20 text-gray-400";
+
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r border text-xs font-medium ${color}`}
+      title={achievement.description}
+    >
+      <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+      <span>{achievement.name}</span>
     </div>
   );
 }

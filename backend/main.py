@@ -15,19 +15,23 @@ from database import engine, get_db
 from sqlalchemy import select
 from db_models import Base, Player
 from models import (
-    LeagueResponse, LeagueRow, PlayerSummary, PlayerProfile, H2HRecord,
+    LeagueResponse, LeagueRow, LeagueRowExtended, PlayerSummary, PlayerProfile, H2HRecord,
     GameLogResponse, GameRow, TeamPickerRequest, TeamPickerResult, TeamPickerPlayer,
     MomResponse, MomEntry, BlockSummary, GameEntryRequest,
     BlockStats, GameResultEntry, PlayerStatsResponse,
     CreateDraftRequest, CreateDraftResponse,
     GameDeleteRequest, CreatePlayerRequest, CreateBlockRequest, AwardMomRequest,
     SetActivePlayersRequest,
+    PlayerAchievements, Achievement,
+    PredictionRequest, PredictionResult,
+    GameEditRequest,
 )
 from queries import (
-    get_league_table, get_all_players, get_player_profile,
+    get_league_table, get_league_table_extended, get_all_players, get_player_profile,
     get_games, get_mom_leaderboard, get_blocks, get_player_ratings, get_pair_synergy,
     recalculate_standings, get_player_stats,
     recalculate_h2h, delete_game, create_player, create_block, award_mom,
+    get_player_achievements, predict_matchup, edit_game,
 )
 from team_picker import pick_teams
 from draft import create_draft, get_draft
@@ -56,13 +60,13 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/api/league", response_model=LeagueResponse)
+@app.get("/api/league")
 async def league(db: AsyncSession = Depends(get_db)):
-    data = await get_league_table(db)
-    return LeagueResponse(
-        block_name=data["block_name"],
-        standings=[LeagueRow(**s) for s in data["standings"]],
-    )
+    data = await get_league_table_extended(db)
+    return {
+        "block_name": data["block_name"],
+        "standings": [LeagueRowExtended(**s).model_dump() for s in data["standings"]],
+    }
 
 
 @app.get("/api/players", response_model=list[PlayerSummary])
@@ -240,6 +244,35 @@ async def player_stats(player_id: int, db: AsyncSession = Depends(get_db)):
         blocks=[BlockStats(**b) for b in data["blocks"]],
         games=[GameResultEntry(**g) for g in data["games"]],
     )
+
+
+# --- Achievements ---
+
+@app.get("/api/players/{player_id}/achievements", response_model=PlayerAchievements)
+async def player_achievements(player_id: int, db: AsyncSession = Depends(get_db)):
+    data = await get_player_achievements(db, player_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return PlayerAchievements(
+        player_id=data["player_id"],
+        achievements=[Achievement(**a) for a in data["achievements"]],
+    )
+
+
+# --- Matchup Prediction ---
+
+@app.post("/api/predict", response_model=PredictionResult)
+async def predict(req: PredictionRequest, db: AsyncSession = Depends(get_db)):
+    data = await predict_matchup(db, req.team_a_ids, req.team_b_ids)
+    return PredictionResult(**data)
+
+
+# --- Game Edit ---
+
+@app.put("/api/games")
+async def edit_game_endpoint(req: GameEditRequest, db: AsyncSession = Depends(get_db)):
+    result = await edit_game(db, req.block_id, req.week_number, req.game_date, req.updates)
+    return result
 
 
 # --- Snake Draft ---

@@ -199,3 +199,51 @@ class AwardMomRequest(BaseModel):
     game_date: date
     player_id: int
     votes: int = 0
+
+
+# --- Extended League Row (with form + streaks + goals) ---
+class LeagueRowExtended(LeagueRow):
+    recent_form: list[str]  # Last 5 results
+    streak: str  # e.g. "W3", "L2", "D1", ""
+    goals_for_total: int
+    goals_against_total: int
+    avg_goals_for: float
+
+
+# --- Achievements ---
+class Achievement(BaseModel):
+    id: str
+    name: str
+    description: str
+    unlocked_date: Optional[date] = None
+
+
+class PlayerAchievements(BaseModel):
+    player_id: int
+    achievements: list[Achievement]
+
+
+# --- Matchup Prediction ---
+class PredictionRequest(BaseModel):
+    team_a_ids: list[int]
+    team_b_ids: list[int]
+
+
+class PredictionResult(BaseModel):
+    team_a_win_pct: float
+    team_b_win_pct: float
+    draw_pct: float
+    team_a_strength: float
+    team_b_strength: float
+    team_a_form: float
+    team_b_form: float
+    team_a_synergy: float
+    team_b_synergy: float
+
+
+# --- Game Edit ---
+class GameEditRequest(BaseModel):
+    block_id: int
+    week_number: int
+    game_date: date
+    updates: list[GameEntryPlayer]  # replacement set of player results

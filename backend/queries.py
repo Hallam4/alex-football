@@ -502,6 +502,320 @@ async def recalculate_h2h(db: AsyncSession):
     await db.commit()
 
 
+async def get_league_table_extended(db: AsyncSession):
+    """Get league standings with form, streaks, and goal stats per player."""
+    latest_block = (await db.execute(select(func.max(Block.id)))).scalar()
+    block = (await db.execute(select(Block).where(Block.id == latest_block))).scalar_one_or_none()
+
+    result = await db.execute(
+        select(LeagueStanding, Player.name)
+        .join(Player, LeagueStanding.player_id == Player.id)
+        .where(LeagueStanding.block_id == latest_block)
+        .order_by(desc(LeagueStanding.ppg), desc(LeagueStanding.points))
+    )
+    rows = result.all()
+
+    standings = []
+    for i, (ls, name) in enumerate(rows, 1):
+        # Recent form (last 5 games in this block)
+        recent = (await db.execute(
+            select(GameResult.result)
+            .where(GameResult.player_id == ls.player_id, GameResult.block_id == latest_block)
+            .order_by(desc(GameResult.game_date), desc(GameResult.id))
+            .limit(5)
+        )).scalars().all()
+
+        # Streak: count consecutive same results from most recent
+        streak = ""
+        if recent:
+            streak_result = recent[0]
+            streak_count = 0
+            for r in recent:
+                if r == streak_result:
+                    streak_count += 1
+                else:
+                    break
+            if streak_count >= 2:
+                streak = f"{streak_result}{streak_count}"
+
+        avg_gf = round(ls.goals_for / ls.played, 1) if ls.played > 0 else 0.0
+
+        standings.append({
+            "position": i,
+            "player_id": ls.player_id,
+            "player_name": name,
+            "played": ls.played,
+            "won": ls.won,
+            "drawn": ls.drawn,
+            "lost": ls.lost,
+            "mom": ls.mom_bonus,
+            "points": ls.points,
+            "goal_difference": ls.goal_difference,
+            "ppg": ls.ppg,
+            "recent_form": list(recent),
+            "streak": streak,
+            "goals_for_total": ls.goals_for,
+            "goals_against_total": ls.goals_against,
+            "avg_goals_for": avg_gf,
+        })
+
+    return {
+        "block_name": block.name if block else "Unknown",
+        "standings": standings,
+    }
+
+
+async def get_player_achievements(db: AsyncSession, player_id: int):
+    """Compute achievements for a player based on their game history."""
+    player = (await db.execute(select(Player).where(Player.id == player_id))).scalar_one_or_none()
+    if not player:
+        return None
+
+    achievements = []
+
+    # Career stats
+    stats = (await db.execute(
+        select(
+            func.count(GameResult.id),
+            func.sum(case((GameResult.result == "W", 1), else_=0)),
+        ).where(GameResult.player_id == player_id)
+    )).one()
+    total, wins = stats
+    wins = wins or 0
+
+    # First game date
+    first_date = (await db.execute(
+        select(func.min(GameResult.game_date)).where(GameResult.player_id == player_id)
+    )).scalar()
+
+    # Century Club (100+ games)
+    if total >= 100:
+        achievements.append({
+            "id": "century", "name": "Century Club",
+            "description": f"Played {total} games",
+            "unlocked_date": None,
+        })
+
+    # Half Century (50+ games)
+    if total >= 50 and total < 100:
+        achievements.append({
+            "id": "half_century", "name": "Half Century",
+            "description": f"Played {total} games",
+            "unlocked_date": None,
+        })
+
+    # Win Machine (50+ wins)
+    if wins >= 50:
+        achievements.append({
+            "id": "win_machine", "name": "Win Machine",
+            "description": f"{wins} career wins",
+            "unlocked_date": None,
+        })
+
+    # Sharp Shooter (60%+ win rate with 20+ games)
+    if total >= 20 and wins / total >= 0.6:
+        achievements.append({
+            "id": "sharp_shooter", "name": "Sharp Shooter",
+            "description": f"{round(wins/total*100,1)}% career win rate",
+            "unlocked_date": None,
+        })
+
+    # Recent form - check for streaks in last 20 games
+    recent = (await db.execute(
+        select(GameResult.result)
+        .where(GameResult.player_id == player_id)
+        .order_by(desc(GameResult.game_date), desc(GameResult.id))
+        .limit(20)
+    )).scalars().all()
+
+    # Hot Streak (5+ consecutive wins in recent history)
+    max_win_streak = 0
+    current_streak = 0
+    for r in recent:
+        if r == "W":
+            current_streak += 1
+            max_win_streak = max(max_win_streak, current_streak)
+        else:
+            current_streak = 0
+    if max_win_streak >= 5:
+        achievements.append({
+            "id": "hot_streak", "name": "On Fire",
+            "description": f"{max_win_streak}-game win streak",
+            "unlocked_date": None,
+        })
+
+    # Comeback Kid: had 2+ losses then 3+ wins in recent history
+    for i in range(len(recent) - 4):
+        window = recent[i:i+5]
+        if (window[0] == "W" and window[1] == "W" and window[2] == "W"
+            and window[3] == "L" and window[4] == "L"):
+            achievements.append({
+                "id": "comeback_kid", "name": "Comeback Kid",
+                "description": "Won 3+ after a losing streak",
+                "unlocked_date": None,
+            })
+            break
+
+    # Blocks played
+    blocks_played = (await db.execute(
+        select(func.count(func.distinct(GameResult.block_id)))
+        .where(GameResult.player_id == player_id)
+    )).scalar()
+    if blocks_played >= 5:
+        achievements.append({
+            "id": "veteran", "name": "Veteran",
+            "description": f"Played in {blocks_played} blocks",
+            "unlocked_date": None,
+        })
+
+    # Perfect block: won every game in any block (min 3 games)
+    block_records = (await db.execute(
+        select(
+            GameResult.block_id,
+            func.count(GameResult.id).label("played"),
+            func.sum(case((GameResult.result == "W", 1), else_=0)).label("won"),
+        )
+        .where(GameResult.player_id == player_id)
+        .group_by(GameResult.block_id)
+    )).all()
+    for br in block_records:
+        if br.played >= 3 and br.won == br.played:
+            achievements.append({
+                "id": "perfect_block", "name": "Perfect Block",
+                "description": f"Won all {br.played} games in a block",
+                "unlocked_date": None,
+            })
+            break
+
+    # Synergy Master: 5+ wins with same partner
+    h2h_a = (await db.execute(
+        select(HeadToHead).where(HeadToHead.player_a_id == player_id, HeadToHead.wins >= 5)
+    )).scalars().all()
+    h2h_b = (await db.execute(
+        select(HeadToHead).where(HeadToHead.player_b_id == player_id, HeadToHead.wins >= 5)
+    )).scalars().all()
+    if h2h_a or h2h_b:
+        best_wins = max(
+            [h.wins for h in h2h_a] + [h.wins for h in h2h_b],
+            default=0,
+        )
+        achievements.append({
+            "id": "synergy_master", "name": "Synergy Master",
+            "description": f"{best_wins}+ wins with a partner",
+            "unlocked_date": None,
+        })
+
+    # MoM Count
+    mom_count = (await db.execute(
+        select(func.count(MomAward.id)).where(MomAward.player_id == player_id)
+    )).scalar()
+    if mom_count >= 3:
+        achievements.append({
+            "id": "fan_favorite", "name": "Fan Favourite",
+            "description": f"{mom_count} Man of the Match awards",
+            "unlocked_date": None,
+        })
+
+    # OG (playing since early)
+    if first_date and player.first_game_date:
+        achievements.append({
+            "id": "og", "name": "OG",
+            "description": f"Playing since {player.first_game_date}",
+            "unlocked_date": None,
+        })
+
+    return {"player_id": player_id, "achievements": achievements}
+
+
+async def predict_matchup(db: AsyncSession, team_a_ids: list[int], team_b_ids: list[int]):
+    """Predict match outcome based on ratings, form, and synergy."""
+    all_ids = team_a_ids + team_b_ids
+    ratings = await get_player_ratings(db, all_ids)
+    synergy_raw = await get_pair_synergy(db, all_ids)
+
+    def team_strength(ids):
+        return sum(ratings.get(pid, 0.5) for pid in ids)
+
+    def team_synergy(ids):
+        pairs = list(combinations(ids, 2))
+        if not pairs:
+            return 0.5
+        total = 0.0
+        for a, b in pairs:
+            key = (min(a, b), max(a, b))
+            total += synergy_raw.get(key, 0.5)
+        return total / len(pairs)
+
+    def team_form(ids):
+        return sum(ratings.get(pid, 0.5) for pid in ids) / len(ids) if ids else 0.5
+
+    str_a = team_strength(team_a_ids)
+    str_b = team_strength(team_b_ids)
+    syn_a = team_synergy(team_a_ids)
+    syn_b = team_synergy(team_b_ids)
+
+    # Combined score (strength + synergy bonus)
+    score_a = str_a + syn_a * 0.5
+    score_b = str_b + syn_b * 0.5
+
+    total = score_a + score_b
+    if total == 0:
+        return {"team_a_win_pct": 33.3, "team_b_win_pct": 33.3, "draw_pct": 33.3,
+                "team_a_strength": 0, "team_b_strength": 0,
+                "team_a_form": 0.5, "team_b_form": 0.5,
+                "team_a_synergy": 0.5, "team_b_synergy": 0.5}
+
+    raw_a = score_a / total
+    raw_b = score_b / total
+
+    # Push towards 50/50 (dampen extreme predictions) and carve out draw %
+    draw_base = 0.15  # base draw probability
+    # Closer teams = higher draw chance
+    closeness = 1.0 - abs(raw_a - raw_b)
+    draw_pct = round((draw_base + closeness * 0.10) * 100, 1)
+
+    remaining = 100.0 - draw_pct
+    win_a = round(raw_a * remaining, 1)
+    win_b = round(remaining - win_a, 1)
+
+    return {
+        "team_a_win_pct": win_a,
+        "team_b_win_pct": win_b,
+        "draw_pct": draw_pct,
+        "team_a_strength": round(str_a, 3),
+        "team_b_strength": round(str_b, 3),
+        "team_a_form": round(str_a / len(team_a_ids), 3) if team_a_ids else 0.5,
+        "team_b_form": round(str_b / len(team_b_ids), 3) if team_b_ids else 0.5,
+        "team_a_synergy": round(syn_a, 3),
+        "team_b_synergy": round(syn_b, 3),
+    }
+
+
+async def edit_game(db: AsyncSession, block_id: int, week_number: int, game_date, updates: list):
+    """Replace all game results for a given game with new data."""
+    # Delete existing
+    count = await delete_game(db, block_id, week_number, game_date)
+
+    # Insert new
+    for p in updates:
+        db.add(GameResult(
+            block_id=block_id,
+            week_number=week_number,
+            game_date=game_date,
+            player_id=p.player_id,
+            result=p.result,
+            is_sub=p.is_sub,
+            replaced_player_id=p.replaced_player_id,
+            goals_for=p.goals_for,
+            goals_against=p.goals_against,
+        ))
+    await db.commit()
+
+    await recalculate_standings(db, block_id)
+    await recalculate_h2h(db)
+    return {"status": "ok", "replaced": count, "new_count": len(updates)}
+
+
 async def delete_game(db: AsyncSession, block_id: int, week_number: int, game_date):
     """Delete all GameResult rows matching the given game identifier. Returns row count."""
     result = await db.execute(
